@@ -1,0 +1,28 @@
+# Simulation data (large video/image files)
+simulation_data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output
+output/
+
+# SSL certs (local dev)
+cert.pem
+key.pem

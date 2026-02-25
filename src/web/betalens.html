@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>BetaLens</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000; color: #ff3333; font-family: 'Courier New', monospace;
+    overflow: hidden; height: 100vh; width: 100vw;
+    touch-action: none; user-select: none;
+  }
+
+  /* --- Screens --- */
+  .screen { display: none; width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+  .screen.active { display: flex; flex-direction: column; }
+
+  /* --- Menu --- */
+  #menu { justify-content: center; align-items: center; gap: 20px; }
+  #menu h1 { font-size: 28px; letter-spacing: 4px; text-transform: uppercase; }
+  #menu .subtitle { font-size: 12px; color: #cc2222; margin-bottom: 30px; }
+  .btn {
+    background: transparent; border: 1px solid #ff3333; color: #ff3333;
+    font-family: 'Courier New', monospace; font-size: 16px; padding: 14px 32px;
+    text-transform: uppercase; letter-spacing: 2px; cursor: pointer;
+    width: 260px; text-align: center;
+  }
+  .btn:active { background: #ff3333; color: #000; }
+  .btn:disabled { opacity: 0.3; }
+  .btn.small { font-size: 12px; padding: 8px 16px; width: auto; }
+  @keyframes save-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  /* Save confirmation toast */
+  #save-toast {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.9); border: 2px solid #ff3333;
+    color: #ff3333; font-family: 'Courier New', monospace;
+    padding: 24px 40px; font-size: 20px; letter-spacing: 3px;
+    z-index: 100; display: none; text-align: center;
+  }
+  #save-toast.show {
+    display: block; animation: toast-fade 1.5s ease-out forwards;
+  }
+  @keyframes toast-fade {
+    0% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+    70% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+  }
+
+  /* --- Annotate --- */
+  #annotate { position: relative; }
+  #annotate-viewport {
+    position: absolute; top: 0; left: 52px; right: 0; bottom: 0;
+    overflow: hidden; touch-action: none;
+  }
+  #annotate-canvas {
+    transform-origin: 0 0; position: absolute;
+  }
+
+  /* --- Left Side Panel (Terminator HUD) --- */
+  #annotate-panel {
+    position: absolute; top: 0; left: 0; bottom: 0; width: 52px; z-index: 5;
+    background: rgba(0, 0, 0, 0.92);
+    border-right: 2px solid #ff3333;
+    display: flex; flex-direction: column;
+    font-size: 11px;
+  }
+  #annotate-panel::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 3px, rgba(255,50,50,0.03) 3px, rgba(255,50,50,0.03) 6px
+    );
+    pointer-events: none;
+  }
+
+  /* Panel button */
+  .pbtn {
+    width: 100%; padding: 12px 2px; text-align: center;
+    background: transparent; border: none; border-bottom: 1px solid #330000;
+    color: #ff3333; font-family: 'Courier New', monospace;
+    font-size: 8px; letter-spacing: 0.5px; text-transform: uppercase;
+    cursor: pointer; position: relative;
+  }
+  .pbtn:active { background: #ff3333; color: #000; }
+  .pbtn .pbtn-icon {
+    font-size: 18px; display: block; line-height: 1;
+    margin-bottom: 2px;
+  }
+
+  /* Spacer pushes save/done to bottom */
+  .panel-spacer { flex: 1; }
+
+  /* Save button special */
+  .pbtn-save { color: #ff3333; }
+  .pbtn-save.save-ready {
+    background: #ff3333; color: #000;
+    animation: save-pulse 1.5s ease-in-out infinite;
+  }
+  .pbtn-done {
+    color: #888;
+  }
+  .pbtn-done:active { background: #666; color: #000; }
+
+  /* SAVE is last — no bottom border, add top accent */
+  .pbtn-save { border-bottom: none; border-top: 1px solid #660000; }
+
+  /* Panel info at top */
+  .panel-info {
+    padding: 6px 2px; text-align: center; font-size: 8px;
+    color: #aa3333; letter-spacing: 0.5px;
+    border-bottom: 1px solid #440000;
+    line-height: 1.4;
+  }
+  .panel-info .val { color: #ff3333; display: block; font-size: 10px; }
+
+  /* Zoom indicator (top right of viewport) */
+  #zoom-indicator {
+    position: absolute; top: 8px; right: 8px; font-size: 12px;
+    color: #ff3333; z-index: 5; background: rgba(0,0,0,0.7); padding: 3px 6px;
+    border: 1px solid #440000;
+  }
+  /* Help hint at top of viewport */
+  #annotate-status {
+    position: absolute; top: 0; left: 52px; right: 0;
+    background: rgba(0,0,0,0.7); padding: 5px 10px; font-size: 9px;
+    border-bottom: 1px solid #440000; z-index: 5;
+    color: #773333; letter-spacing: 1px; text-align: center;
+  }
+
+  /* Hold edit popup */
+  #hold-popup {
+    display: none; position: absolute; z-index: 20;
+    background: rgba(0, 0, 0, 0.92); border: 2px solid #00ffcc;
+    padding: 16px; min-width: 220px;
+    font-family: 'Courier New', monospace; color: #00ffcc;
+  }
+  #hold-popup.show { display: block; }
+  #hold-popup .popup-title {
+    font-size: 14px; letter-spacing: 2px; margin-bottom: 12px;
+    text-align: center; border-bottom: 1px solid #006655; padding-bottom: 8px;
+  }
+  #hold-popup label { font-size: 12px; display: block; margin-bottom: 4px; }
+  #hold-popup input[type=range] {
+    width: 100%; accent-color: #00ffcc; margin-bottom: 12px;
+  }
+  #hold-popup .radius-val { float: right; color: #00aa88; }
+  #hold-popup .popup-btns { display: flex; gap: 8px; margin-top: 8px; }
+  #hold-popup .popup-btns button {
+    flex: 1; padding: 10px; font-family: 'Courier New', monospace;
+    font-size: 13px; cursor: pointer; border: 1px solid; background: transparent;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .popup-btn-delete { color: #ff4444; border-color: #ff4444 !important; }
+  .popup-btn-delete:active { background: #ff4444 !important; color: #000 !important; }
+  .popup-btn-close { color: #00ffcc; border-color: #00ffcc !important; }
+  .popup-btn-close:active { background: #00ffcc !important; color: #000 !important; }
+
+  /* --- Live --- */
+  #live { position: relative; }
+  #live-video { width: 100%; height: 100%; object-fit: cover; }
+  #live-canvas {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  #live-hud {
+    position: absolute; top: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.8); padding: 10px 10px 10px 90px;
+    font-size: 12px; border-bottom: 2px solid #660000; z-index: 5;
+  }
+  #live-hud .status { font-size: 16px; font-weight: bold; letter-spacing: 2px; }
+  #live-hud .status.locked { color: #ff3333; }
+  #live-hud .status.lost { color: #ff3333; opacity: 0.5; }
+  #live-hud .telemetry { color: #aa2222; margin-top: 2px; font-size: 10px; }
+  #live-back {
+    position: absolute; top: 0; left: 0; z-index: 10;
+    padding: 10px 14px; border-right: 1px solid #440000;
+    border-bottom: 2px solid #660000;
+  }
+  #live-error {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.9); border: 2px solid #ff3333;
+    color: #ff3333; padding: 24px; max-width: 90%; text-align: center;
+    font-size: 14px; letter-spacing: 1px; line-height: 1.6; z-index: 20;
+    display: none;
+  }
+  #live-error.show { display: block; }
+  .scanline {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+  }
+
+  /* Loading overlay */
+  #loading {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: #000; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; z-index: 999;
+    font-size: 14px; gap: 10px;
+  }
+  #loading.hidden { display: none; }
+  #load-progress { color: #aa2222; }
+</style>
+</head>
+<body>
+
+<!-- Loading Screen -->
+<div id="loading">
+  <div>// INITIALIZING OPENCV</div>
+  <div id="load-progress">loading...</div>
+</div>
+
+<!-- Menu Screen -->
+<div id="menu" class="screen">
+  <h1>BetaLens</h1>
+  <div class="subtitle">// BOULDERING ROUTE AR SYSTEM</div>
+  <button class="btn" onclick="startAnnotate()">Annotate Route</button>
+  <button class="btn" id="btn-live" onclick="startLive()" disabled>Live Tracking</button>
+  <div id="menu-info" style="font-size:11px; color:#662222; margin-top:10px; text-align:center;"></div>
+</div>
+
+<!-- Annotate Screen -->
+<div id="annotate" class="screen">
+  <div id="annotate-status">// TAP TO PLACE HOLDS</div>
+  <div id="annotate-viewport">
+    <canvas id="annotate-canvas"></canvas>
+  </div>
+  <div id="zoom-indicator">1.0x</div>
+  <div id="hold-popup">
+    <div class="popup-title">// EDIT <span id="popup-hold-id">H1</span></div>
+    <label>SIZE <span class="radius-val" id="popup-radius-val">40</span></label>
+    <input type="range" id="popup-radius" min="10" max="250" value="40"
+           oninput="onPopupResize(this.value)">
+    <div class="popup-btns">
+      <button class="popup-btn-delete" onclick="popupDelete()">Delete</button>
+      <button class="popup-btn-close" onclick="popupClose()">OK</button>
+    </div>
+  </div>
+  <div id="annotate-panel">
+    <button class="pbtn pbtn-done" onclick="annotateBack()"><span class="pbtn-icon">&lt;</span>DONE</button>
+    <div class="panel-info">
+      <span class="val" id="panel-holds">0</span>HOLDS
+    </div>
+    <div class="panel-info">
+      <span class="val" id="panel-zoom">1.0x</span>ZOOM
+    </div>
+    <button class="pbtn" onclick="annotateLoadImage()"><span class="pbtn-icon">+</span>LOAD</button>
+    <button class="pbtn" onclick="annotateCapturePhoto()"><span class="pbtn-icon">O</span>CAM</button>
+    <button class="pbtn" onclick="annotateUndo()"><span class="pbtn-icon">&larr;</span>UNDO</button>
+    <button class="pbtn" onclick="annotateClear()"><span class="pbtn-icon">X</span>CLR</button>
+    <button class="pbtn" onclick="annotateResetZoom()"><span class="pbtn-icon">[ ]</span>1:1</button>
+    <div class="panel-spacer"></div>
+    <button class="pbtn pbtn-save" id="btn-save" onclick="annotateSave()"><span class="pbtn-icon">&#9654;</span>SAVE</button>
+  </div>
+  <input type="file" id="file-input" accept="image/*" style="display:none">
+  <input type="file" id="capture-input" accept="image/*" capture="environment" style="display:none">
+</div>
+
+<!-- Save Toast -->
+<div id="save-toast">ROUTE SAVED</div>
+
+<!-- Live Tracking Screen -->
+<div id="live" class="screen">
+  <video id="live-video" autoplay playsinline muted></video>
+  <canvas id="live-canvas"></canvas>
+  <div class="scanline"></div>
+  <div id="live-hud">
+    <button class="btn small" id="live-back" onclick="stopLive()">Back</button>
+    <div class="status" id="hud-status">INITIALIZING...</div>
+    <div class="telemetry" id="hud-telemetry"></div>
+  </div>
+  <div id="live-error"></div>
+</div>
+
+<script>
+// ===== GLOBALS =====
+let cvReady = false;
+let routeData = null;       // { anchor: { dataUrl, width, height }, holds: [...] }
+let anchorMat = null;
+let anchorKp = null;
+let anchorDesc = null;
+let orb = null;
+let bfMatcher = null;
+
+// Annotate state
+let annoImg = null;         // HTMLImageElement
+let annoHolds = [];
+let annoHistory = [];
+let annoCanvas, annoCtx;
+let defaultRadius = 30;
+
+// Zoom/pan state
+let viewZoom = 1;
+let viewPanX = 0;
+let viewPanY = 0;
+let baseScale = 1;         // fit-to-screen scale
+let pinchStartDist = 0;
+let pinchStartZoom = 1;
+let pinchStartPanX = 0, pinchStartPanY = 0;
+let panStartX = 0, panStartY = 0;
+let panViewStartX = 0, panViewStartY = 0;
+let isTwoFinger = false;
+let totalTouchMovement = 0;
+const TAP_THRESHOLD = 12;   // px of movement allowed for a tap
+
+// Long-press state
+let longPressTimer = null;
+let longPressTriggered = false;
+let editingHoldIdx = -1;    // index of hold being edited in popup
+const LONG_PRESS_MS = 400;
+
+// Live state
+let liveStream = null;
+let liveRunning = false;
+let liveVideo, liveCanvas, liveCtx;
+let frameCount = 0;
+let trackedCount = 0;
+let lastFps = 0;
+let fpsFrames = 0;
+let fpsTime = 0;
+
+// ===== OPENCV LOADING =====
+function onOpenCvReady() {
+  cvReady = true;
+  document.getElementById('loading').classList.add('hidden');
+  showMenu();
+}
+
+// Load OpenCV.js
+(function loadOpenCV() {
+  const script = document.createElement('script');
+  script.src = 'https://docs.opencv.org/4.9.0/opencv.js';
+  script.async = true;
+  script.onload = () => {
+    if (typeof cv !== 'undefined') {
+      if (cv.getBuildInformation) {
+        onOpenCvReady();
+      } else {
+        cv['onRuntimeInitialized'] = onOpenCvReady;
+      }
+    }
+  };
+  script.onerror = () => {
+    document.getElementById('load-progress').textContent = 'FAILED — check network';
+  };
+  document.head.appendChild(script);
+  // Progress dots
+  let dots = 0;
+  const iv = setInterval(() => {
+    if (cvReady) { clearInterval(iv); return; }
+    dots = (dots + 1) % 4;
+    document.getElementById('load-progress').textContent = 'loading' + '.'.repeat(dots);
+  }, 500);
+})();
+
+// ===== NAVIGATION =====
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function showMenu() {
+  showScreen('menu');
+  // Check for saved route
+  const saved = localStorage.getItem('betalens_route');
+  if (saved) {
+    routeData = JSON.parse(saved);
+    document.getElementById('btn-live').disabled = false;
+    document.getElementById('menu-info').textContent =
+      `Route loaded: ${routeData.holds.length} holds`;
+  } else {
+    document.getElementById('menu-info').textContent = 'No route saved — annotate first';
+  }
+}
+
+// ===== ANNOTATE =====
+function startAnnotate() {
+  showScreen('annotate');
+  annoCanvas = document.getElementById('annotate-canvas');
+  annoCtx = annoCanvas.getContext('2d');
+  annoHolds = [];
+  annoHistory = [];
+  annoImg = null;
+  annoSavedSnapshot = '';
+  viewZoom = 1; viewPanX = 0; viewPanY = 0;
+
+  // If we have a saved route, reload it
+  if (routeData && routeData.anchor && routeData.anchor.dataUrl) {
+    const img = new Image();
+    img.onload = () => {
+      annoImg = img;
+      annoHolds = routeData.holds.map(h => ({...h}));
+      annoSavedSnapshot = JSON.stringify(annoHolds);
+      fitCanvas();
+      drawAnnotation();
+    };
+    img.src = routeData.anchor.dataUrl;
+  }
+
+  // Touch handlers on viewport
+  const vp = document.getElementById('annotate-viewport');
+  vp.addEventListener('touchstart', onAnnoTouchStart, { passive: false });
+  vp.addEventListener('touchmove', onAnnoTouchMove, { passive: false });
+  vp.addEventListener('touchend', onAnnoTouchEnd, { passive: false });
+  vp.addEventListener('click', onAnnotateClick);
+  // Mouse wheel zoom for desktop testing
+  vp.addEventListener('wheel', onAnnoWheel, { passive: false });
+  updateAnnotateStatus();
+}
+
+function fitCanvas() {
+  if (!annoImg) return;
+  const vp = document.getElementById('annotate-viewport');
+  const availW = vp.offsetWidth;
+  const availH = vp.offsetHeight;
+
+  // Canvas at full image resolution
+  annoCanvas.width = annoImg.width;
+  annoCanvas.height = annoImg.height;
+
+  // Compute base scale to fit image in viewport
+  baseScale = Math.min(availW / annoImg.width, availH / annoImg.height);
+
+  // Reset zoom/pan
+  viewZoom = 1;
+  viewPanX = (availW - annoImg.width * baseScale) / 2;
+  viewPanY = (availH - annoImg.height * baseScale) / 2;
+  applyTransform();
+}
+
+function applyTransform() {
+  const s = baseScale * viewZoom;
+  annoCanvas.style.transform = `translate(${viewPanX}px, ${viewPanY}px) scale(${s})`;
+  document.getElementById('zoom-indicator').textContent = `${viewZoom.toFixed(1)}x`;
+  const pz = document.getElementById('panel-zoom');
+  if (pz) pz.textContent = `${viewZoom.toFixed(1)}x`;
+}
+
+function screenToImageCoords(clientX, clientY) {
+  const vp = document.getElementById('annotate-viewport');
+  const rect = vp.getBoundingClientRect();
+  const sx = clientX - rect.left;
+  const sy = clientY - rect.top;
+  const s = baseScale * viewZoom;
+  return {
+    x: Math.round((sx - viewPanX) / s),
+    y: Math.round((sy - viewPanY) / s)
+  };
+}
+
+function getTouchDist(t1, t2) {
+  return Math.sqrt((t1.clientX - t2.clientX) ** 2 + (t1.clientY - t2.clientY) ** 2);
+}
+
+function getTouchCenter(t1, t2) {
+  return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+}
+
+function onAnnoTouchStart(e) {
+  e.preventDefault();
+  if (editingHoldIdx >= 0) return; // popup open, ignore canvas touches
+  totalTouchMovement = 0;
+  longPressTriggered = false;
+  clearTimeout(longPressTimer);
+
+  if (e.touches.length === 2) {
+    isTwoFinger = true;
+    clearTimeout(longPressTimer);
+    pinchStartDist = getTouchDist(e.touches[0], e.touches[1]);
+    pinchStartZoom = viewZoom;
+    pinchStartPanX = viewPanX;
+    pinchStartPanY = viewPanY;
+    const center = getTouchCenter(e.touches[0], e.touches[1]);
+    panStartX = center.x;
+    panStartY = center.y;
+  } else if (e.touches.length === 1) {
+    isTwoFinger = false;
+    panStartX = e.touches[0].clientX;
+    panStartY = e.touches[0].clientY;
+    panViewStartX = viewPanX;
+    panViewStartY = viewPanY;
+
+    // Start long-press timer
+    const tx = e.touches[0].clientX;
+    const ty = e.touches[0].clientY;
+    longPressTimer = setTimeout(() => {
+      if (totalTouchMovement < TAP_THRESHOLD && !isTwoFinger && annoImg) {
+        const { x, y } = screenToImageCoords(tx, ty);
+        const idx = findNearestHold(x, y);
+        if (idx >= 0) {
+          longPressTriggered = true;
+          showHoldPopup(idx, tx, ty);
+        }
+      }
+    }, LONG_PRESS_MS);
+  }
+}
+
+function onAnnoTouchMove(e) {
+  e.preventDefault();
+  if (editingHoldIdx >= 0) return;
+  if (e.touches.length === 2) {
+    isTwoFinger = true;
+    totalTouchMovement = 999;
+    clearTimeout(longPressTimer);
+
+    const dist = getTouchDist(e.touches[0], e.touches[1]);
+    const newZoom = Math.max(1, Math.min(10, pinchStartZoom * (dist / pinchStartDist)));
+
+    const center = getTouchCenter(e.touches[0], e.touches[1]);
+    const panDx = center.x - panStartX;
+    const panDy = center.y - panStartY;
+
+    viewZoom = newZoom;
+    viewPanX = pinchStartPanX + panDx;
+    viewPanY = pinchStartPanY + panDy;
+    applyTransform();
+  } else if (e.touches.length === 1) {
+    const dx = e.touches[0].clientX - panStartX;
+    const dy = e.touches[0].clientY - panStartY;
+    totalTouchMovement += Math.abs(dx) + Math.abs(dy);
+
+    // Cancel long-press if finger moves
+    if (totalTouchMovement >= TAP_THRESHOLD) {
+      clearTimeout(longPressTimer);
+    }
+
+    if (viewZoom > 1.05 && totalTouchMovement > TAP_THRESHOLD) {
+      viewPanX = panViewStartX + dx;
+      viewPanY = panViewStartY + dy;
+      applyTransform();
+    }
+  }
+}
+
+function onAnnoTouchEnd(e) {
+  e.preventDefault();
+  clearTimeout(longPressTimer);
+  if (editingHoldIdx >= 0) return;
+
+  // Single tap to place hold — only if not long-press, finger barely moved, not 2-finger
+  if (!longPressTriggered && !isTwoFinger && totalTouchMovement < TAP_THRESHOLD
+      && e.changedTouches.length === 1 && annoImg) {
+    const t = e.changedTouches[0];
+    const { x, y } = screenToImageCoords(t.clientX, t.clientY);
+    if (x >= 0 && x < annoImg.width && y >= 0 && y < annoImg.height) {
+      addHold(x, y);
+    }
+  }
+  if (e.touches.length === 0) {
+    isTwoFinger = false;
+  }
+}
+
+function onAnnotateClick(e) {
+  // Desktop mouse click
+  if (!annoImg || ('ontouchstart' in window)) return;
+  const { x, y } = screenToImageCoords(e.clientX, e.clientY);
+  if (x >= 0 && x < annoImg.width && y >= 0 && y < annoImg.height) {
+    addHold(x, y);
+  }
+}
+
+function onAnnoWheel(e) {
+  e.preventDefault();
+  if (!annoImg) return;
+  const vp = document.getElementById('annotate-viewport');
+  const rect = vp.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+
+  const oldZoom = viewZoom;
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  viewZoom = Math.max(1, Math.min(10, viewZoom * delta));
+
+  // Zoom toward cursor
+  const ratio = (baseScale * viewZoom) / (baseScale * oldZoom);
+  viewPanX = cx - (cx - viewPanX) * ratio;
+  viewPanY = cy - (cy - viewPanY) * ratio;
+  applyTransform();
+}
+
+function drawAnnotation() {
+  if (!annoImg) return;
+  annoCtx.clearRect(0, 0, annoCanvas.width, annoCanvas.height);
+  annoCtx.drawImage(annoImg, 0, 0);
+
+  for (let i = 0; i < annoHolds.length; i++) {
+    const h = annoHolds[i];
+    const isEditing = (i === editingHoldIdx);
+    const color = isEditing ? '#ffff00' : '#00ffcc';
+    const fillColor = isEditing ? 'rgba(255, 255, 0, 0.2)' : 'rgba(0, 255, 204, 0.15)';
+    const glowColor = isEditing ? 'rgba(255, 255, 0, 0.4)' : 'rgba(0, 255, 204, 0.3)';
+
+    // Outer glow
+    annoCtx.beginPath();
+    annoCtx.arc(h.x, h.y, h.r + 6, 0, Math.PI * 2);
+    annoCtx.strokeStyle = glowColor;
+    annoCtx.lineWidth = 8;
+    annoCtx.stroke();
+
+    // Filled circle
+    annoCtx.beginPath();
+    annoCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+    annoCtx.fillStyle = fillColor;
+    annoCtx.fill();
+
+    // Main outline
+    annoCtx.beginPath();
+    annoCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+    annoCtx.strokeStyle = color;
+    annoCtx.lineWidth = 4;
+    annoCtx.stroke();
+
+    // Crosshair
+    const cross = h.r * 0.4;
+    annoCtx.beginPath();
+    annoCtx.moveTo(h.x - cross, h.y); annoCtx.lineTo(h.x + cross, h.y);
+    annoCtx.moveTo(h.x, h.y - cross); annoCtx.lineTo(h.x, h.y + cross);
+    annoCtx.strokeStyle = color;
+    annoCtx.lineWidth = 2;
+    annoCtx.stroke();
+
+    // Center dot
+    annoCtx.beginPath();
+    annoCtx.arc(h.x, h.y, 4, 0, Math.PI * 2);
+    annoCtx.fillStyle = color;
+    annoCtx.fill();
+
+    // Label with background
+    const fontSize = Math.max(28, h.r * 0.6);
+    annoCtx.font = `bold ${fontSize}px Courier New`;
+    const label = h.id;
+    const lw = annoCtx.measureText(label).width;
+    annoCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    annoCtx.fillRect(h.x + h.r + 4, h.y - fontSize * 0.4, lw + 8, fontSize + 4);
+    annoCtx.fillStyle = color;
+    annoCtx.fillText(label, h.x + h.r + 8, h.y + fontSize * 0.3);
+  }
+  updateAnnotateStatus();
+  updateSaveButton();
+}
+
+function findNearestHold(x, y) {
+  let bestIdx = -1, bestDist = Infinity;
+  for (let i = 0; i < annoHolds.length; i++) {
+    const h = annoHolds[i];
+    const dist = Math.sqrt((h.x - x) ** 2 + (h.y - y) ** 2);
+    if (dist < h.r * 1.5 && dist < bestDist) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+function addHold(x, y) {
+  annoHistory.push(annoHolds.map(h => ({...h})));
+  const id = 'H' + (annoHolds.length + 1);
+  const r = Math.round(Math.min(annoImg.width, annoImg.height) * 0.03);
+  annoHolds.push({ id, x, y, r, kind: 'hand' });
+  drawAnnotation();
+}
+
+function showHoldPopup(idx, screenX, screenY) {
+  editingHoldIdx = idx;
+  const h = annoHolds[idx];
+  const popup = document.getElementById('hold-popup');
+  document.getElementById('popup-hold-id').textContent = h.id;
+  const slider = document.getElementById('popup-radius');
+  slider.value = h.r;
+  document.getElementById('popup-radius-val').textContent = h.r;
+
+  // Position popup near tap but keep in viewport
+  const vp = document.getElementById('annotate-viewport');
+  const rect = vp.getBoundingClientRect();
+  let px = screenX - rect.left - 110;
+  let py = screenY - rect.top - 160;
+  px = Math.max(4, Math.min(rect.width - 228, px));
+  py = Math.max(4, Math.min(rect.height - 180, py));
+  popup.style.left = px + 'px';
+  popup.style.top = py + 'px';
+  popup.classList.add('show');
+
+  // Snapshot for undo
+  annoHistory.push(annoHolds.map(h => ({...h})));
+
+  // Highlight the selected hold
+  drawAnnotation();
+}
+
+function onPopupResize(val) {
+  if (editingHoldIdx < 0) return;
+  val = parseInt(val);
+  annoHolds[editingHoldIdx].r = val;
+  document.getElementById('popup-radius-val').textContent = val;
+  drawAnnotation();
+}
+
+function popupDelete() {
+  if (editingHoldIdx < 0) return;
+  annoHolds.splice(editingHoldIdx, 1);
+  renumberHolds();
+  editingHoldIdx = -1;
+  document.getElementById('hold-popup').classList.remove('show');
+  drawAnnotation();
+}
+
+function popupClose() {
+  editingHoldIdx = -1;
+  document.getElementById('hold-popup').classList.remove('show');
+  drawAnnotation();
+}
+
+function renumberHolds() {
+  annoHolds.forEach((h, i) => h.id = 'H' + (i + 1));
+}
+
+function annotateUndo() {
+  if (annoHistory.length > 0) {
+    annoHolds = annoHistory.pop();
+    drawAnnotation();
+  }
+}
+
+function annotateClear() {
+  if (annoHolds.length > 0) {
+    annoHistory.push(annoHolds.map(h => ({...h})));
+    annoHolds = [];
+    drawAnnotation();
+  }
+}
+
+function annotateResetZoom() {
+  if (!annoImg) return;
+  const vp = document.getElementById('annotate-viewport');
+  viewZoom = 1;
+  viewPanX = (vp.offsetWidth - annoImg.width * baseScale) / 2;
+  viewPanY = (vp.offsetHeight - annoImg.height * baseScale) / 2;
+  applyTransform();
+}
+
+function updateAnnotateStatus() {
+  const el = document.getElementById('annotate-status');
+  const ph = document.getElementById('panel-holds');
+  if (!annoImg) {
+    el.textContent = '// LOAD OR TAKE A PHOTO';
+  } else {
+    el.textContent = '// TAP=ADD  LONG-PRESS=EDIT  PINCH=ZOOM';
+  }
+  if (ph) ph.textContent = annoHolds.length;
+}
+
+function annotateLoadImage() {
+  const input = document.getElementById('file-input');
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    loadImageFile(file);
+  };
+  input.click();
+}
+
+function annotateCapturePhoto() {
+  const input = document.getElementById('capture-input');
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    loadImageFile(file);
+  };
+  input.click();
+}
+
+function loadImageFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      annoImg = img;
+      annoHolds = [];
+      annoHistory = [];
+      fitCanvas();
+      drawAnnotation();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+let annoSavedSnapshot = '';  // track if holds changed since last save
+
+function annotateSave() {
+  if (!annoImg || annoHolds.length === 0) {
+    alert('Add at least one hold first');
+    return;
+  }
+  // Downscale anchor image for storage (max 1024px)
+  const maxDim = 1024;
+  let sw = annoImg.width, sh = annoImg.height;
+  const scale = Math.min(maxDim / sw, maxDim / sh, 1);
+  sw = Math.round(sw * scale);
+  sh = Math.round(sh * scale);
+
+  const tmpCanvas = document.createElement('canvas');
+  tmpCanvas.width = sw;
+  tmpCanvas.height = sh;
+  const tmpCtx = tmpCanvas.getContext('2d');
+  tmpCtx.drawImage(annoImg, 0, 0, sw, sh);
+  const dataUrl = tmpCanvas.toDataURL('image/jpeg', 0.8);
+
+  // Scale hold coordinates
+  const scaledHolds = annoHolds.map(h => ({
+    ...h,
+    x: Math.round(h.x * scale),
+    y: Math.round(h.y * scale),
+    r: Math.round(h.r * scale)
+  }));
+
+  routeData = {
+    anchor: { dataUrl, width: sw, height: sh },
+    holds: scaledHolds,
+    savedAt: new Date().toISOString()
+  };
+
+  localStorage.setItem('betalens_route', JSON.stringify(routeData));
+  annoSavedSnapshot = JSON.stringify(annoHolds);
+  updateSaveButton();
+
+  // Show save toast
+  const toast = document.getElementById('save-toast');
+  toast.textContent = `ROUTE SAVED — ${scaledHolds.length} HOLDS`;
+  toast.classList.remove('show');
+  void toast.offsetWidth;  // force reflow for re-trigger
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 1500);
+
+  document.getElementById('annotate-status').textContent =
+    `// SAVED: ${scaledHolds.length} holds (${sw}x${sh})`;
+  document.getElementById('btn-live').disabled = false;
+}
+
+function hasUnsavedChanges() {
+  return annoHolds.length > 0 && JSON.stringify(annoHolds) !== annoSavedSnapshot;
+}
+
+function updateSaveButton() {
+  const btn = document.getElementById('btn-save');
+  if (hasUnsavedChanges()) {
+    btn.classList.add('save-ready');
+    btn.innerHTML = '<span class="pbtn-icon">&#9654;</span>SAVE!';
+  } else {
+    btn.classList.remove('save-ready');
+    btn.innerHTML = '<span class="pbtn-icon">&#9654;</span>SAVE';
+  }
+}
+
+function annotateBack() {
+  if (hasUnsavedChanges()) {
+    if (confirm('You have unsaved holds. Save before leaving?')) {
+      annotateSave();
+    }
+  }
+  showMenu();
+}
+
+// ===== LIVE TRACKING =====
+async function startLive() {
+  if (!routeData) { alert('Annotate a route first'); return; }
+  if (!cvReady) { alert('OpenCV not ready'); return; }
+
+  showScreen('live');
+
+  // Check camera API availability
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const dbg = 'Protocol: ' + location.protocol + '\nHost: ' + location.host +
+      '\nSecure: ' + window.isSecureContext + '\nUA: ' + navigator.userAgent.slice(0,80);
+    setTimeout(() => showLiveError('CAMERA NOT AVAILABLE',
+      'Camera API not found.\n\n' + dbg + '\n\n' +
+      'If you see "Not secure" in the address bar,\ntap the lock icon > Site settings > allow Camera.'), 100);
+    return;
+  }
+  liveVideo = document.getElementById('live-video');
+  liveCanvas = document.getElementById('live-canvas');
+  liveCtx = liveCanvas.getContext('2d');
+  frameCount = 0;
+  trackedCount = 0;
+  fpsFrames = 0;
+  fpsTime = performance.now();
+
+  // Initialize OpenCV objects
+  initTracker();
+
+  // Start camera
+  try {
+    liveStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    liveVideo.srcObject = liveStream;
+    await liveVideo.play();
+
+    // Wait for video dimensions
+    await new Promise(resolve => {
+      const check = () => {
+        if (liveVideo.videoWidth > 0) resolve();
+        else requestAnimationFrame(check);
+      };
+      check();
+    });
+
+    liveCanvas.width = liveVideo.videoWidth;
+    liveCanvas.height = liveVideo.videoHeight;
+
+    liveRunning = true;
+    trackingLoop();
+  } catch (err) {
+    showLiveError('CAMERA ERROR', err.message +
+      '\n\nMake sure you open this page in Chrome (not Telegram or other in-app browsers).' +
+      '\n\nURL must be https:// or localhost.');
+  }
+}
+
+function showLiveError(title, msg) {
+  document.getElementById('hud-status').textContent = title;
+  const el = document.getElementById('live-error');
+  el.innerHTML = `<div style="font-size:18px;margin-bottom:12px;letter-spacing:3px">${title}</div>` +
+    `<div style="font-size:12px;color:#aa3333;white-space:pre-line">${msg}</div>`;
+  el.classList.add('show');
+}
+
+function initTracker() {
+  // Clean up previous
+  if (anchorMat) { anchorMat.delete(); anchorMat = null; }
+  if (anchorKp) { anchorKp.delete(); anchorKp = null; }
+  if (anchorDesc) { anchorDesc.delete(); anchorDesc = null; }
+  if (orb) { orb.delete(); orb = null; }
+  if (bfMatcher) { bfMatcher.delete(); bfMatcher = null; }
+
+  // Load anchor image into OpenCV Mat
+  const img = new Image();
+  img.onload = () => {
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = img.width;
+    tmpCanvas.height = img.height;
+    const tmpCtx = tmpCanvas.getContext('2d');
+    tmpCtx.drawImage(img, 0, 0);
+    const imgData = tmpCtx.getImageData(0, 0, img.width, img.height);
+
+    anchorMat = cv.matFromImageData(imgData);
+    const anchorGray = new cv.Mat();
+    cv.cvtColor(anchorMat, anchorGray, cv.COLOR_RGBA2GRAY);
+
+    orb = new cv.ORB(2000);
+    anchorKp = new cv.KeyPointVector();
+    anchorDesc = new cv.Mat();
+    orb.detectAndCompute(anchorGray, new cv.Mat(), anchorKp, anchorDesc);
+
+    bfMatcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
+
+    anchorGray.delete();
+    console.log(`Anchor: ${anchorKp.size()} features`);
+  };
+  img.src = routeData.anchor.dataUrl;
+}
+
+function trackingLoop() {
+  if (!liveRunning) return;
+
+  const t0 = performance.now();
+  frameCount++;
+
+  // Capture frame
+  liveCtx.drawImage(liveVideo, 0, 0);
+
+  let tracking = false;
+  let matchCount = 0;
+  let transformedHolds = [];
+
+  if (anchorDesc && anchorDesc.rows > 0) {
+    try {
+      // Get current frame
+      const imgData = liveCtx.getImageData(0, 0, liveCanvas.width, liveCanvas.height);
+      const frameMat = cv.matFromImageData(imgData);
+      const frameGray = new cv.Mat();
+      cv.cvtColor(frameMat, frameGray, cv.COLOR_RGBA2GRAY);
+
+      // Detect features
+      const frameKp = new cv.KeyPointVector();
+      const frameDesc = new cv.Mat();
+      orb.detectAndCompute(frameGray, new cv.Mat(), frameKp, frameDesc);
+
+      if (frameDesc.rows >= 15) {
+        // Match
+        const matches = new cv.DMatchVectorVector();
+        bfMatcher.knnMatch(anchorDesc, frameDesc, matches, 2);
+
+        // Ratio test
+        const good = [];
+        for (let i = 0; i < matches.size(); i++) {
+          const match = matches.get(i);
+          if (match.size() >= 2) {
+            const m = match.get(0);
+            const n = match.get(1);
+            if (m.distance < 0.75 * n.distance) {
+              good.push(m);
+            }
+          }
+        }
+        matchCount = good.length;
+
+        if (good.length >= 15) {
+          // Build point arrays
+          const srcPts = cv.matFromArray(good.length, 1, cv.CV_32FC2,
+            good.flatMap(m => {
+              const kp = anchorKp.get(m.queryIdx);
+              return [kp.pt.x, kp.pt.y];
+            }));
+          const dstPts = cv.matFromArray(good.length, 1, cv.CV_32FC2,
+            good.flatMap(m => {
+              const kp = frameKp.get(m.trainIdx);
+              return [kp.pt.x, kp.pt.y];
+            }));
+
+          const mask = new cv.Mat();
+          const H = cv.findHomography(srcPts, dstPts, cv.RANSAC, 5.0, mask);
+
+          if (H && H.rows === 3) {
+            // Transform holds
+            const holds = routeData.holds;
+            for (const hold of holds) {
+              const pts = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x, hold.y]);
+              const dst = new cv.Mat();
+              cv.perspectiveTransform(pts, dst, H);
+              const cx = dst.data32F[0];
+              const cy = dst.data32F[1];
+
+              // Transform radius
+              const ptsR = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x + hold.r, hold.y]);
+              const dstR = new cv.Mat();
+              cv.perspectiveTransform(ptsR, dstR, H);
+              const rx = dstR.data32F[0];
+              const ry = dstR.data32F[1];
+              const r = Math.sqrt((rx - cx) ** 2 + (ry - cy) ** 2);
+
+              transformedHolds.push({ id: hold.id, x: cx, y: cy, r, kind: hold.kind });
+
+              pts.delete(); dst.delete(); ptsR.delete(); dstR.delete();
+            }
+            tracking = true;
+            trackedCount++;
+            H.delete();
+          }
+          mask.delete(); srcPts.delete(); dstPts.delete();
+        }
+        matches.delete();
+      }
+      frameKp.delete(); frameDesc.delete(); frameGray.delete(); frameMat.delete();
+    } catch (err) {
+      console.warn('Tracking error:', err);
+    }
+  }
+
+  // Draw overlay
+  drawLiveOverlay(tracking, transformedHolds, matchCount);
+
+  // FPS calculation
+  fpsFrames++;
+  const now = performance.now();
+  if (now - fpsTime >= 1000) {
+    lastFps = fpsFrames / ((now - fpsTime) / 1000);
+    fpsFrames = 0;
+    fpsTime = now;
+  }
+
+  // Update HUD
+  const statusEl = document.getElementById('hud-status');
+  if (tracking) {
+    statusEl.textContent = 'TARGET LOCK';
+    statusEl.className = 'status locked';
+  } else {
+    statusEl.textContent = frameCount % 10 < 7 ? 'TARGET LOST' : '';
+    statusEl.className = 'status lost';
+  }
+
+  const trkPct = frameCount > 0 ? (trackedCount / frameCount * 100).toFixed(0) : 0;
+  document.getElementById('hud-telemetry').textContent =
+    `FEAT MATCH: ${String(matchCount).padStart(3, '0')}  |  ` +
+    `TRK: ${trkPct}%  |  ` +
+    `FPS: ${lastFps.toFixed(1)}  |  ` +
+    `FRM: ${String(frameCount).padStart(5, '0')}`;
+
+  // Schedule next frame — skip frames if processing is slow
+  const elapsed = performance.now() - t0;
+  if (elapsed > 100) {
+    // Processing is slow, skip next frame
+    setTimeout(() => requestAnimationFrame(trackingLoop), 0);
+  } else {
+    requestAnimationFrame(trackingLoop);
+  }
+}
+
+function drawLiveOverlay(tracking, holds, matchCount) {
+  // We already drew the video frame, now draw holds on top
+  if (!tracking) return;
+
+  for (const h of holds) {
+    // Outer glow
+    liveCtx.beginPath();
+    liveCtx.arc(h.x, h.y, h.r + 4, 0, Math.PI * 2);
+    liveCtx.strokeStyle = 'rgba(0, 255, 204, 0.3)';
+    liveCtx.lineWidth = 6;
+    liveCtx.stroke();
+    // Filled
+    liveCtx.beginPath();
+    liveCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+    liveCtx.fillStyle = 'rgba(0, 255, 204, 0.1)';
+    liveCtx.fill();
+    // Main outline
+    liveCtx.beginPath();
+    liveCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+    liveCtx.strokeStyle = '#00ffcc';
+    liveCtx.lineWidth = 3;
+    liveCtx.stroke();
+    // Crosshair
+    const cross = h.r * 0.4;
+    liveCtx.beginPath();
+    liveCtx.moveTo(h.x - cross, h.y);
+    liveCtx.lineTo(h.x + cross, h.y);
+    liveCtx.moveTo(h.x, h.y - cross);
+    liveCtx.lineTo(h.x, h.y + cross);
+    liveCtx.strokeStyle = '#00ffcc';
+    liveCtx.lineWidth = 2;
+    liveCtx.stroke();
+    // Label
+    const fs = Math.max(16, h.r * 0.5);
+    liveCtx.font = `bold ${fs}px Courier New`;
+    liveCtx.fillStyle = '#00ffcc';
+    liveCtx.fillText(h.id, h.x + h.r + 6, h.y + 6);
+  }
+}
+
+function stopLive() {
+  liveRunning = false;
+  if (liveStream) {
+    liveStream.getTracks().forEach(t => t.stop());
+    liveStream = null;
+  }
+  showMenu();
+}
+
+// Handle resize
+window.addEventListener('resize', () => {
+  if (annoImg) { fitCanvas(); drawAnnotation(); }
+});
+</script>
+</body>
+</html>
