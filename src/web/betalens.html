@@ -19,7 +19,25 @@
   /* --- Menu --- */
   #menu { justify-content: center; align-items: center; gap: 20px; }
   #menu h1 { font-size: 28px; letter-spacing: 4px; text-transform: uppercase; }
-  #menu .subtitle { font-size: 12px; color: #cc2222; margin-bottom: 30px; }
+  #menu .subtitle { font-size: 12px; color: #cc2222; margin-bottom: 20px; }
+  #route-list { width: 280px; max-height: 40vh; overflow-y: auto; }
+  .route-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; margin: 4px 0;
+    border: 1px solid #444; background: rgba(255,255,255,0.05); cursor: pointer;
+    font-family: 'Courier New', monospace; font-size: 12px; color: #ccc;
+  }
+  .route-item:active { background: rgba(255,255,255,0.15); }
+  .route-item .ri-grade { color: #ff8844; font-weight: bold; min-width: 28px; }
+  .route-item .ri-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .route-item .ri-holds { color: #888; font-size: 10px; }
+  .route-item .ri-btns { display: flex; gap: 4px; }
+  .route-item .ri-btn {
+    background: transparent; border: 1px solid #555; color: #999;
+    font-family: 'Courier New', monospace; font-size: 10px; padding: 4px 6px; cursor: pointer;
+  }
+  .route-item .ri-btn:active { background: #555; color: #fff; }
+  .route-item .ri-btn.ri-del { color: #f66; border-color: #f66; }
   .btn {
     background: transparent; border: 1px solid #ff3333; color: #ff3333;
     font-family: 'Courier New', monospace; font-size: 16px; padding: 14px 32px;
@@ -107,6 +125,8 @@
     line-height: 1.4;
   }
   .panel-info .val { color: #fff; display: block; font-size: 10px; font-weight: bold; }
+  .panel-grade { cursor: pointer; }
+  .panel-grade .val { color: #ff8844; }
 
   /* Version — top right corner overlay */
   .build-ver {
@@ -156,6 +176,13 @@
   .popup-btn-delete:active { background: #ff4444 !important; color: #000 !important; }
   .popup-btn-close { color: #00ffcc; border-color: #00ffcc !important; }
   .popup-btn-close:active { background: #00ffcc !important; color: #000 !important; }
+  .popup-types { display: flex; gap: 4px; margin-bottom: 10px; }
+  .popup-types button {
+    flex: 1; padding: 6px 2px; font-family: 'Courier New', monospace;
+    font-size: 9px; cursor: pointer; border: 2px solid #333; background: transparent;
+    text-transform: uppercase; letter-spacing: 0.5px; color: #999;
+  }
+  .popup-types button.active { border-color: currentColor; font-weight: bold; }
 
   /* --- Live --- */
   #live { position: relative; overflow: hidden; }
@@ -224,9 +251,9 @@
 <div id="menu" class="screen">
   <h1>BetaLens</h1>
   <div class="subtitle">// BOULDERING ROUTE AR SYSTEM</div>
-  <button class="btn" onclick="startAnnotate()">Annotate Route</button>
-  <button class="btn" id="btn-live" onclick="startLive()" disabled>Live Tracking</button>
-  <div id="menu-info" style="font-size:11px; color:#662222; margin-top:10px; text-align:center;"></div>
+  <button class="btn" onclick="startAnnotate(null)">+ New Route</button>
+  <div id="route-list"></div>
+  <div id="menu-info" style="font-size:11px; color:#666; margin-top:10px; text-align:center;"></div>
 </div>
 
 <!-- Annotate Screen -->
@@ -239,6 +266,8 @@
   <div class="build-ver" id="anno-ver"></div>
   <div id="hold-popup">
     <div class="popup-title">// EDIT <span id="popup-hold-id">H1</span></div>
+    <label>TYPE</label>
+    <div class="popup-types" id="popup-types"></div>
     <label>SIZE <span class="radius-val" id="popup-radius-val">40</span></label>
     <input type="range" id="popup-radius" min="10" max="250" value="40"
            oninput="onPopupResize(this.value)">
@@ -255,6 +284,9 @@
     </div>
     <div class="panel-info">
       <span class="val" id="panel-zoom">1.0x</span>ZOOM
+    </div>
+    <div class="panel-info panel-grade" onclick="cycleGrade()">
+      <span class="val" id="panel-grade">?</span>GRADE
     </div>
     <button class="pbtn" onclick="annotateLoadImage()"><span class="pbtn-icon">+</span>LOAD</button>
     <button class="pbtn" onclick="annotateCapturePhoto()"><span class="pbtn-icon">O</span>CAM</button>
@@ -287,11 +319,22 @@
 </div>
 
 <script>
-const BUILD_VER = '250225.4';
+const BUILD_VER = '250225.5';
+
+// Hold type color presets
+const HOLD_COLORS = {
+  start:  { color: '#44ff44', fill: 'rgba(68,255,68,0.2)', glow: 'rgba(68,255,68,0.4)', dim: 'rgba(68,255,68,0.15)' },
+  hand:   { color: '#44aaff', fill: 'rgba(68,170,255,0.2)', glow: 'rgba(68,170,255,0.4)', dim: 'rgba(68,170,255,0.15)' },
+  foot:   { color: '#ffcc44', fill: 'rgba(255,204,68,0.2)', glow: 'rgba(255,204,68,0.4)', dim: 'rgba(255,204,68,0.15)' },
+  finish: { color: '#ff4466', fill: 'rgba(255,68,102,0.2)', glow: 'rgba(255,68,102,0.4)', dim: 'rgba(255,68,102,0.15)' },
+};
+const HOLD_TYPES = ['start', 'hand', 'foot', 'finish'];
+const GRADE_OPTIONS = ['?','V0','V1','V2','V3','V4','V5','V6','V7','V8','V9','V10','V11','V12','V13','V14','V15','V16'];
 
 // ===== GLOBALS =====
 let cvReady = false;
 let routeData = null;       // { anchor: { dataUrl, width, height }, holds: [...] }
+let currentRouteIdx = -1;   // index in saved routes array, -1 = new route
 let anchorMat = null;
 let anchorKp = null;
 let anchorDesc = null;
@@ -390,22 +433,70 @@ function showScreen(id) {
   document.getElementById(id).classList.add('active');
 }
 
-function showMenu() {
-  showScreen('menu');
-  // Check for saved route
-  const saved = localStorage.getItem('betalens_route');
-  if (saved) {
-    routeData = JSON.parse(saved);
-    document.getElementById('btn-live').disabled = false;
-    document.getElementById('menu-info').textContent =
-      `Route loaded: ${routeData.holds.length} holds`;
-  } else {
-    document.getElementById('menu-info').textContent = 'No route saved — annotate first';
+function getRoutes() {
+  try { return JSON.parse(localStorage.getItem('betalens_routes') || '[]'); }
+  catch { return []; }
+}
+function saveRoutes(routes) {
+  localStorage.setItem('betalens_routes', JSON.stringify(routes));
+}
+// Migrate old single-route format
+function migrateOldRoute() {
+  const old = localStorage.getItem('betalens_route');
+  if (old) {
+    const routes = getRoutes();
+    const r = JSON.parse(old);
+    r.name = 'Route 1';
+    routes.push(r);
+    saveRoutes(routes);
+    localStorage.removeItem('betalens_route');
   }
 }
 
+function showMenu() {
+  showScreen('menu');
+  migrateOldRoute();
+  const routes = getRoutes();
+  const list = document.getElementById('route-list');
+  list.innerHTML = '';
+  if (routes.length === 0) {
+    document.getElementById('menu-info').textContent = 'No routes — create one';
+  } else {
+    document.getElementById('menu-info').textContent = routes.length + ' route(s) saved';
+    routes.forEach((r, i) => {
+      const div = document.createElement('div');
+      div.className = 'route-item';
+      div.innerHTML =
+        `<span class="ri-grade">${r.grade || '?'}</span>` +
+        `<span class="ri-name">${r.name || 'Route ' + (i+1)}</span>` +
+        `<span class="ri-holds">${r.holds.length}h</span>` +
+        `<span class="ri-btns">` +
+          `<button class="ri-btn" onclick="event.stopPropagation();startAnnotate(${i})">Edit</button>` +
+          `<button class="ri-btn" onclick="event.stopPropagation();selectRoute(${i})">Track</button>` +
+          `<button class="ri-btn ri-del" onclick="event.stopPropagation();deleteRoute(${i})">X</button>` +
+        `</span>`;
+      list.appendChild(div);
+    });
+  }
+}
+
+function selectRoute(idx) {
+  const routes = getRoutes();
+  routeData = routes[idx];
+  currentRouteIdx = idx;
+  startLive();
+}
+
+function deleteRoute(idx) {
+  if (!confirm('Delete this route?')) return;
+  const routes = getRoutes();
+  routes.splice(idx, 1);
+  saveRoutes(routes);
+  showMenu();
+}
+
 // ===== ANNOTATE =====
-function startAnnotate() {
+function startAnnotate(routeIdx) {
   showScreen('annotate');
   annoCanvas = document.getElementById('annotate-canvas');
   annoCtx = annoCanvas.getContext('2d');
@@ -414,6 +505,19 @@ function startAnnotate() {
   annoImg = null;
   annoSavedSnapshot = '';
   viewZoom = 1; viewPanX = 0; viewPanY = 0;
+
+  // Load existing route if editing
+  if (routeIdx !== null && routeIdx !== undefined) {
+    currentRouteIdx = routeIdx;
+    const routes = getRoutes();
+    routeData = routes[routeIdx];
+  } else {
+    currentRouteIdx = -1;
+    routeData = null;
+  }
+
+  currentGrade = (routeData && routeData.grade) ? routeData.grade : '?';
+  document.getElementById('panel-grade').textContent = currentGrade;
 
   // If we have a saved route, reload it
   if (routeData && routeData.anchor && routeData.anchor.dataUrl) {
@@ -644,14 +748,15 @@ function drawAnnotation() {
   for (let i = 0; i < annoHolds.length; i++) {
     const h = annoHolds[i];
     const isEditing = (i === editingHoldIdx);
-    const color = isEditing ? '#ffff00' : '#00ff88';
-    const fillColor = isEditing ? 'rgba(255, 255, 0, 0.25)' : 'rgba(0, 255, 136, 0.2)';
-    const glowColor = isEditing ? 'rgba(255, 255, 0, 0.5)' : 'rgba(0, 255, 136, 0.4)';
+    const preset = HOLD_COLORS[h.kind] || HOLD_COLORS.hand;
+    const color = isEditing ? '#ffff00' : preset.color;
+    const fillColor = isEditing ? 'rgba(255, 255, 0, 0.25)' : preset.fill;
+    const glowColor = isEditing ? 'rgba(255, 255, 0, 0.5)' : preset.glow;
 
     // Double outer glow for visibility
     annoCtx.beginPath();
     annoCtx.arc(h.x, h.y, h.r + 10, 0, Math.PI * 2);
-    annoCtx.strokeStyle = isEditing ? 'rgba(255,255,0,0.15)' : 'rgba(0,255,136,0.15)';
+    annoCtx.strokeStyle = isEditing ? 'rgba(255,255,0,0.15)' : preset.dim;
     annoCtx.lineWidth = 12;
     annoCtx.stroke();
 
@@ -693,7 +798,8 @@ function drawAnnotation() {
     // Label with high-contrast background
     const fontSize = Math.max(30, h.r * 0.65);
     annoCtx.font = `bold ${fontSize}px Courier New`;
-    const label = h.id;
+    const typeTag = h.kind === 'hand' ? '' : ' ' + h.kind[0].toUpperCase();
+    const label = h.id + typeTag;
     const lw = annoCtx.measureText(label).width;
     annoCtx.fillStyle = 'rgba(0, 0, 0, 0.8)';
     annoCtx.fillRect(h.x + h.r + 4, h.y - fontSize * 0.45, lw + 10, fontSize + 6);
@@ -736,6 +842,23 @@ function showHoldPopup(idx, screenX, screenY) {
   const slider = document.getElementById('popup-radius');
   slider.value = h.r;
   document.getElementById('popup-radius-val').textContent = h.r;
+
+  // Populate type buttons
+  const typesDiv = document.getElementById('popup-types');
+  typesDiv.innerHTML = '';
+  HOLD_TYPES.forEach(t => {
+    const btn = document.createElement('button');
+    btn.textContent = t;
+    btn.style.color = HOLD_COLORS[t].color;
+    if (h.kind === t) btn.classList.add('active');
+    btn.onclick = () => {
+      annoHolds[editingHoldIdx].kind = t;
+      typesDiv.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      drawAnnotation();
+    };
+    typesDiv.appendChild(btn);
+  });
 
   // Position popup near tap but keep in viewport
   const vp = document.getElementById('annotate-viewport');
@@ -797,6 +920,12 @@ function annotateClear() {
   }
 }
 
+function cycleGrade() {
+  const idx = GRADE_OPTIONS.indexOf(currentGrade);
+  currentGrade = GRADE_OPTIONS[(idx + 1) % GRADE_OPTIONS.length];
+  document.getElementById('panel-grade').textContent = currentGrade;
+}
+
 function annotateResetZoom() {
   if (!annoImg) return;
   const vp = document.getElementById('annotate-viewport');
@@ -854,6 +983,7 @@ function loadImageFile(file) {
 }
 
 let annoSavedSnapshot = '';  // track if holds changed since last save
+let currentGrade = '?';      // route grade (V0-V16)
 
 function annotateSave() {
   if (!annoImg || annoHolds.length === 0) {
@@ -885,10 +1015,21 @@ function annotateSave() {
   routeData = {
     anchor: { dataUrl, width: sw, height: sh },
     holds: scaledHolds,
+    grade: currentGrade,
+    name: routeData && routeData.name ? routeData.name : 'Route ' + (getRoutes().length + 1),
     savedAt: new Date().toISOString()
   };
 
-  localStorage.setItem('betalens_route', JSON.stringify(routeData));
+  // Save to routes array
+  const routes = getRoutes();
+  if (currentRouteIdx >= 0 && currentRouteIdx < routes.length) {
+    routeData.name = routes[currentRouteIdx].name || routeData.name;
+    routes[currentRouteIdx] = routeData;
+  } else {
+    routes.push(routeData);
+    currentRouteIdx = routes.length - 1;
+  }
+  saveRoutes(routes);
   annoSavedSnapshot = JSON.stringify(annoHolds);
   updateSaveButton();
 
@@ -902,7 +1043,6 @@ function annotateSave() {
 
   document.getElementById('annotate-status').textContent =
     `// SAVED: ${scaledHolds.length} holds (${sw}x${sh})`;
-  document.getElementById('btn-live').disabled = false;
 }
 
 function hasUnsavedChanges() {
@@ -1171,27 +1311,28 @@ function drawLiveOverlay(tracking, holds, matchCount) {
   if (!tracking) return;
 
   for (const h of holds) {
+    const p = HOLD_COLORS[h.kind] || HOLD_COLORS.hand;
     // Double outer glow
     liveCtx.beginPath();
     liveCtx.arc(h.x, h.y, h.r + 8, 0, Math.PI * 2);
-    liveCtx.strokeStyle = 'rgba(0, 255, 136, 0.15)';
+    liveCtx.strokeStyle = p.dim;
     liveCtx.lineWidth = 10;
     liveCtx.stroke();
     // Inner glow
     liveCtx.beginPath();
     liveCtx.arc(h.x, h.y, h.r + 3, 0, Math.PI * 2);
-    liveCtx.strokeStyle = 'rgba(0, 255, 136, 0.4)';
+    liveCtx.strokeStyle = p.glow;
     liveCtx.lineWidth = 6;
     liveCtx.stroke();
     // Filled
     liveCtx.beginPath();
     liveCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    liveCtx.fillStyle = 'rgba(0, 255, 136, 0.2)';
+    liveCtx.fillStyle = p.fill;
     liveCtx.fill();
     // Main outline
     liveCtx.beginPath();
     liveCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    liveCtx.strokeStyle = '#00ff88';
+    liveCtx.strokeStyle = p.color;
     liveCtx.lineWidth = 4;
     liveCtx.stroke();
     // Crosshair
@@ -1201,7 +1342,7 @@ function drawLiveOverlay(tracking, holds, matchCount) {
     liveCtx.lineTo(h.x + cross, h.y);
     liveCtx.moveTo(h.x, h.y - cross);
     liveCtx.lineTo(h.x, h.y + cross);
-    liveCtx.strokeStyle = '#00ff88';
+    liveCtx.strokeStyle = p.color;
     liveCtx.lineWidth = 3;
     liveCtx.stroke();
     // Center dot
@@ -1212,11 +1353,13 @@ function drawLiveOverlay(tracking, holds, matchCount) {
     // Label with background
     const fs = Math.max(18, h.r * 0.55);
     liveCtx.font = `bold ${fs}px Courier New`;
-    const lw = liveCtx.measureText(h.id).width;
+    const typeTag = h.kind === 'hand' ? '' : ' ' + h.kind[0].toUpperCase();
+    const lbl = h.id + typeTag;
+    const lw = liveCtx.measureText(lbl).width;
     liveCtx.fillStyle = 'rgba(0, 0, 0, 0.75)';
     liveCtx.fillRect(h.x + h.r + 4, h.y - fs * 0.45, lw + 8, fs + 4);
     liveCtx.fillStyle = '#fff';
-    liveCtx.fillText(h.id, h.x + h.r + 8, h.y + fs * 0.3);
+    liveCtx.fillText(lbl, h.x + h.r + 8, h.y + fs * 0.3);
   }
 }
 
