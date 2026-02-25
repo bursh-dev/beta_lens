@@ -54,70 +54,66 @@
   /* --- Annotate --- */
   #annotate { position: relative; }
   #annotate-viewport {
-    position: absolute; top: 0; left: 52px; right: 0; bottom: 0;
+    position: absolute; top: 0; left: 56px; right: 0; bottom: 0;
     overflow: hidden; touch-action: none;
   }
   #annotate-canvas {
     transform-origin: 0 0; position: absolute;
   }
 
-  /* --- Left Side Panel (Terminator HUD) --- */
+  /* --- Left Side Panel (Metallic) --- */
   #annotate-panel {
-    position: absolute; top: 0; left: 0; bottom: 0; width: 52px; z-index: 5;
-    background: rgba(0, 0, 0, 0.92);
-    border-right: 2px solid #ff3333;
+    position: absolute; top: 0; left: 0; bottom: 0; width: 56px; z-index: 5;
+    background: linear-gradient(180deg, #2a2d30 0%, #1a1c1e 50%, #222528 100%);
+    border-right: 1px solid #555;
     display: flex; flex-direction: column;
     font-size: 11px;
-  }
-  #annotate-panel::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-    background: repeating-linear-gradient(
-      0deg, transparent, transparent 3px, rgba(255,50,50,0.03) 3px, rgba(255,50,50,0.03) 6px
-    );
-    pointer-events: none;
+    box-shadow: 2px 0 8px rgba(0,0,0,0.5);
   }
 
   /* Panel button */
   .pbtn {
-    width: 100%; padding: 12px 2px; text-align: center;
-    background: transparent; border: none; border-bottom: 1px solid #330000;
-    color: #ff3333; font-family: 'Courier New', monospace;
+    width: 100%; padding: 10px 2px; text-align: center;
+    background: linear-gradient(180deg, #3a3d40 0%, #2a2d30 100%);
+    border: none; border-bottom: 1px solid #111; border-top: 1px solid #444;
+    color: #e0e0e0; font-family: 'Courier New', monospace;
     font-size: 8px; letter-spacing: 0.5px; text-transform: uppercase;
     cursor: pointer; position: relative;
   }
-  .pbtn:active { background: #ff3333; color: #000; }
+  .pbtn:active { background: linear-gradient(180deg, #555 0%, #444 100%); color: #fff; }
   .pbtn .pbtn-icon {
     font-size: 18px; display: block; line-height: 1;
-    margin-bottom: 2px;
+    margin-bottom: 2px; color: #fff;
   }
 
-  /* Spacer pushes save/done to bottom */
-  .panel-spacer { flex: 1; }
-
-  /* Save button special */
-  .pbtn-save { color: #ff3333; }
+  /* Save button */
+  .pbtn-save { color: #5f5; }
+  .pbtn-save .pbtn-icon { color: #5f5; }
   .pbtn-save.save-ready {
-    background: #ff3333; color: #000;
+    background: linear-gradient(180deg, #2a5a2a 0%, #1a3a1a 100%);
+    color: #5f5;
     animation: save-pulse 1.5s ease-in-out infinite;
   }
-  .pbtn-done {
-    color: #888;
-  }
-  .pbtn-done:active { background: #666; color: #000; }
+  .pbtn-done { color: #8cf; }
+  .pbtn-done .pbtn-icon { color: #8cf; }
+  .pbtn-done:active { background: #456; color: #fff; }
 
-  /* SAVE is last — no bottom border, add top accent */
-  .pbtn-save { border-bottom: none; border-top: 1px solid #660000; }
-
-  /* Panel info at top */
+  /* Panel info */
   .panel-info {
     padding: 6px 2px; text-align: center; font-size: 8px;
-    color: #aa3333; letter-spacing: 0.5px;
-    border-bottom: 1px solid #440000;
+    color: #999; letter-spacing: 0.5px;
+    border-bottom: 1px solid #111; border-top: 1px solid #333;
+    background: linear-gradient(180deg, #252830 0%, #1e2028 100%);
     line-height: 1.4;
   }
-  .panel-info .val { color: #ff3333; display: block; font-size: 10px; }
-  .panel-ver { color: #440000; font-size: 7px; text-align: center; padding: 4px 2px; margin-top: auto; letter-spacing: 0; }
+  .panel-info .val { color: #fff; display: block; font-size: 10px; font-weight: bold; }
+
+  /* Version — top right corner overlay */
+  .build-ver {
+    position: absolute; top: 4px; right: 4px; z-index: 50;
+    color: rgba(255,255,255,0.35); font-size: 8px; letter-spacing: 0;
+    pointer-events: none;
+  }
 
   /* Zoom indicator (top right of viewport) */
   #zoom-indicator {
@@ -127,10 +123,10 @@
   }
   /* Help hint at top of viewport */
   #annotate-status {
-    position: absolute; top: 0; left: 52px; right: 0;
+    position: absolute; top: 0; left: 56px; right: 0;
     background: rgba(0,0,0,0.7); padding: 5px 10px; font-size: 9px;
-    border-bottom: 1px solid #440000; z-index: 5;
-    color: #773333; letter-spacing: 1px; text-align: center;
+    border-bottom: 1px solid #444; z-index: 5;
+    color: #aaa; letter-spacing: 1px; text-align: center;
   }
 
   /* Hold edit popup */
@@ -240,6 +236,7 @@
     <canvas id="annotate-canvas"></canvas>
   </div>
   <div id="zoom-indicator">1.0x</div>
+  <div class="build-ver" id="anno-ver"></div>
   <div id="hold-popup">
     <div class="popup-title">// EDIT <span id="popup-hold-id">H1</span></div>
     <label>SIZE <span class="radius-val" id="popup-radius-val">40</span></label>
@@ -264,7 +261,6 @@
     <button class="pbtn" onclick="annotateUndo()"><span class="pbtn-icon">&larr;</span>UNDO</button>
     <button class="pbtn" onclick="annotateClear()"><span class="pbtn-icon">X</span>CLR</button>
     <button class="pbtn" onclick="annotateResetZoom()"><span class="pbtn-icon">[ ]</span>1:1</button>
-    <div class="panel-ver" id="panel-ver"></div>
   </div>
   <input type="file" id="file-input" accept="image/*" style="display:none">
   <input type="file" id="capture-input" accept="image/*" capture="environment" style="display:none">
@@ -291,7 +287,7 @@
 </div>
 
 <script>
-const BUILD_VER = '250225.1';
+const BUILD_VER = '250225.2';
 
 // ===== GLOBALS =====
 let cvReady = false;
@@ -354,10 +350,10 @@ function onOpenCvReady() {
   cvReady = true;
   document.getElementById('loading').classList.add('hidden');
   // Set build version in both screens
-  const pv = document.getElementById('panel-ver');
+  const av = document.getElementById('anno-ver');
   const hv = document.getElementById('hud-ver');
-  if (pv) pv.textContent = 'v' + BUILD_VER;
-  if (hv) hv.textContent = 'BL v' + BUILD_VER;
+  if (av) av.textContent = 'v' + BUILD_VER;
+  if (hv) hv.textContent = 'v' + BUILD_VER;
   showMenu();
 }
 
@@ -623,13 +619,20 @@ function drawAnnotation() {
   for (let i = 0; i < annoHolds.length; i++) {
     const h = annoHolds[i];
     const isEditing = (i === editingHoldIdx);
-    const color = isEditing ? '#ffff00' : '#00ffcc';
-    const fillColor = isEditing ? 'rgba(255, 255, 0, 0.2)' : 'rgba(0, 255, 204, 0.15)';
-    const glowColor = isEditing ? 'rgba(255, 255, 0, 0.4)' : 'rgba(0, 255, 204, 0.3)';
+    const color = isEditing ? '#ffff00' : '#00ff88';
+    const fillColor = isEditing ? 'rgba(255, 255, 0, 0.25)' : 'rgba(0, 255, 136, 0.2)';
+    const glowColor = isEditing ? 'rgba(255, 255, 0, 0.5)' : 'rgba(0, 255, 136, 0.4)';
 
-    // Outer glow
+    // Double outer glow for visibility
     annoCtx.beginPath();
-    annoCtx.arc(h.x, h.y, h.r + 6, 0, Math.PI * 2);
+    annoCtx.arc(h.x, h.y, h.r + 10, 0, Math.PI * 2);
+    annoCtx.strokeStyle = isEditing ? 'rgba(255,255,0,0.15)' : 'rgba(0,255,136,0.15)';
+    annoCtx.lineWidth = 12;
+    annoCtx.stroke();
+
+    // Inner glow
+    annoCtx.beginPath();
+    annoCtx.arc(h.x, h.y, h.r + 4, 0, Math.PI * 2);
     annoCtx.strokeStyle = glowColor;
     annoCtx.lineWidth = 8;
     annoCtx.stroke();
@@ -640,37 +643,40 @@ function drawAnnotation() {
     annoCtx.fillStyle = fillColor;
     annoCtx.fill();
 
-    // Main outline
+    // Main outline — thick white-green
     annoCtx.beginPath();
     annoCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
     annoCtx.strokeStyle = color;
-    annoCtx.lineWidth = 4;
+    annoCtx.lineWidth = 5;
     annoCtx.stroke();
 
     // Crosshair
-    const cross = h.r * 0.4;
+    const cross = h.r * 0.45;
     annoCtx.beginPath();
     annoCtx.moveTo(h.x - cross, h.y); annoCtx.lineTo(h.x + cross, h.y);
     annoCtx.moveTo(h.x, h.y - cross); annoCtx.lineTo(h.x, h.y + cross);
     annoCtx.strokeStyle = color;
-    annoCtx.lineWidth = 2;
+    annoCtx.lineWidth = 3;
     annoCtx.stroke();
 
     // Center dot
     annoCtx.beginPath();
-    annoCtx.arc(h.x, h.y, 4, 0, Math.PI * 2);
-    annoCtx.fillStyle = color;
+    annoCtx.arc(h.x, h.y, 5, 0, Math.PI * 2);
+    annoCtx.fillStyle = '#fff';
     annoCtx.fill();
 
-    // Label with background
-    const fontSize = Math.max(28, h.r * 0.6);
+    // Label with high-contrast background
+    const fontSize = Math.max(30, h.r * 0.65);
     annoCtx.font = `bold ${fontSize}px Courier New`;
     const label = h.id;
     const lw = annoCtx.measureText(label).width;
-    annoCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    annoCtx.fillRect(h.x + h.r + 4, h.y - fontSize * 0.4, lw + 8, fontSize + 4);
-    annoCtx.fillStyle = color;
-    annoCtx.fillText(label, h.x + h.r + 8, h.y + fontSize * 0.3);
+    annoCtx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    annoCtx.fillRect(h.x + h.r + 4, h.y - fontSize * 0.45, lw + 10, fontSize + 6);
+    annoCtx.strokeStyle = color;
+    annoCtx.lineWidth = 1;
+    annoCtx.strokeRect(h.x + h.r + 4, h.y - fontSize * 0.45, lw + 10, fontSize + 6);
+    annoCtx.fillStyle = '#fff';
+    annoCtx.fillText(label, h.x + h.r + 9, h.y + fontSize * 0.3);
   }
   updateAnnotateStatus();
   updateSaveButton();
@@ -1140,38 +1146,52 @@ function drawLiveOverlay(tracking, holds, matchCount) {
   if (!tracking) return;
 
   for (const h of holds) {
-    // Outer glow
+    // Double outer glow
     liveCtx.beginPath();
-    liveCtx.arc(h.x, h.y, h.r + 4, 0, Math.PI * 2);
-    liveCtx.strokeStyle = 'rgba(0, 255, 204, 0.3)';
+    liveCtx.arc(h.x, h.y, h.r + 8, 0, Math.PI * 2);
+    liveCtx.strokeStyle = 'rgba(0, 255, 136, 0.15)';
+    liveCtx.lineWidth = 10;
+    liveCtx.stroke();
+    // Inner glow
+    liveCtx.beginPath();
+    liveCtx.arc(h.x, h.y, h.r + 3, 0, Math.PI * 2);
+    liveCtx.strokeStyle = 'rgba(0, 255, 136, 0.4)';
     liveCtx.lineWidth = 6;
     liveCtx.stroke();
     // Filled
     liveCtx.beginPath();
     liveCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    liveCtx.fillStyle = 'rgba(0, 255, 204, 0.1)';
+    liveCtx.fillStyle = 'rgba(0, 255, 136, 0.2)';
     liveCtx.fill();
     // Main outline
     liveCtx.beginPath();
     liveCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    liveCtx.strokeStyle = '#00ffcc';
-    liveCtx.lineWidth = 3;
+    liveCtx.strokeStyle = '#00ff88';
+    liveCtx.lineWidth = 4;
     liveCtx.stroke();
     // Crosshair
-    const cross = h.r * 0.4;
+    const cross = h.r * 0.45;
     liveCtx.beginPath();
     liveCtx.moveTo(h.x - cross, h.y);
     liveCtx.lineTo(h.x + cross, h.y);
     liveCtx.moveTo(h.x, h.y - cross);
     liveCtx.lineTo(h.x, h.y + cross);
-    liveCtx.strokeStyle = '#00ffcc';
-    liveCtx.lineWidth = 2;
+    liveCtx.strokeStyle = '#00ff88';
+    liveCtx.lineWidth = 3;
     liveCtx.stroke();
-    // Label
-    const fs = Math.max(16, h.r * 0.5);
+    // Center dot
+    liveCtx.beginPath();
+    liveCtx.arc(h.x, h.y, 4, 0, Math.PI * 2);
+    liveCtx.fillStyle = '#fff';
+    liveCtx.fill();
+    // Label with background
+    const fs = Math.max(18, h.r * 0.55);
     liveCtx.font = `bold ${fs}px Courier New`;
-    liveCtx.fillStyle = '#00ffcc';
-    liveCtx.fillText(h.id, h.x + h.r + 6, h.y + 6);
+    const lw = liveCtx.measureText(h.id).width;
+    liveCtx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    liveCtx.fillRect(h.x + h.r + 4, h.y - fs * 0.45, lw + 8, fs + 4);
+    liveCtx.fillStyle = '#fff';
+    liveCtx.fillText(h.id, h.x + h.r + 8, h.y + fs * 0.3);
   }
 }
 
