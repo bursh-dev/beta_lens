@@ -254,6 +254,11 @@
   <button class="btn" onclick="startAnnotate(null)">+ New Route</button>
   <div id="route-list"></div>
   <div id="menu-info" style="font-size:11px; color:#666; margin-top:10px; text-align:center;"></div>
+  <div style="display:flex; gap:8px; margin-top:10px;">
+    <button class="btn small" onclick="exportRoutes()">Export</button>
+    <button class="btn small" onclick="document.getElementById('import-input').click()">Import</button>
+  </div>
+  <input type="file" id="import-input" accept=".json" style="display:none" onchange="importRoutes(this)">
 </div>
 
 <!-- Annotate Screen -->
@@ -319,7 +324,7 @@
 </div>
 
 <script>
-const BUILD_VER = '250225.6';
+const BUILD_VER = '250225.7';
 
 // Hold type color presets
 const HOLD_COLORS = {
@@ -493,6 +498,42 @@ function deleteRoute(idx) {
   routes.splice(idx, 1);
   saveRoutes(routes);
   showMenu();
+}
+
+function exportRoutes() {
+  const routes = getRoutes();
+  if (routes.length === 0) { alert('No routes to export'); return; }
+  const blob = new Blob([JSON.stringify(routes)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'betalens-routes.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importRoutes(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (!Array.isArray(imported)) throw new Error('Not an array');
+      const routes = getRoutes();
+      let count = 0;
+      for (const r of imported) {
+        if (r.holds && r.anchor) { routes.push(r); count++; }
+      }
+      saveRoutes(routes);
+      alert(count + ' route(s) imported');
+      showMenu();
+    } catch (err) {
+      alert('Invalid file: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  input.value = '';
 }
 
 // ===== ANNOTATE =====
