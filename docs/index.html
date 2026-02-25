@@ -287,7 +287,7 @@
 </div>
 
 <script>
-const BUILD_VER = '250225.3';
+const BUILD_VER = '250225.4';
 
 // ===== GLOBALS =====
 let cvReady = false;
@@ -1236,6 +1236,8 @@ function applyLiveTransform() {
 }
 
 function onLiveTouchStart(e) {
+  // Don't intercept taps on HUD buttons
+  if (e.target.closest('#live-hud')) return;
   if (e.touches.length === 2) {
     e.preventDefault();
     liveIsTwoFinger = true;
