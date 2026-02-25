@@ -287,7 +287,7 @@
 </div>
 
 <script>
-const BUILD_VER = '250225.2';
+const BUILD_VER = '250225.3';
 
 // ===== GLOBALS =====
 let cvReady = false;
@@ -459,7 +459,20 @@ function fitCanvas() {
   applyTransform();
 }
 
+function clampPan() {
+  if (!annoImg) return;
+  const vp = document.getElementById('annotate-viewport');
+  const vpW = vp.offsetWidth, vpH = vp.offsetHeight;
+  const s = baseScale * viewZoom;
+  const imgW = annoImg.width * s, imgH = annoImg.height * s;
+  // Keep at least 20% of image visible on each side
+  const margin = 0.2;
+  viewPanX = Math.max(-imgW * (1 - margin), Math.min(vpW * (1 - margin), viewPanX));
+  viewPanY = Math.max(-imgH * (1 - margin), Math.min(vpH * (1 - margin), viewPanY));
+}
+
 function applyTransform() {
+  clampPan();
   const s = baseScale * viewZoom;
   annoCanvas.style.transform = `translate(${viewPanX}px, ${viewPanY}px) scale(${s})`;
   document.getElementById('zoom-indicator').textContent = `${viewZoom.toFixed(1)}x`;
@@ -539,12 +552,16 @@ function onAnnoTouchMove(e) {
     const newZoom = Math.max(1, Math.min(10, pinchStartZoom * (dist / pinchStartDist)));
 
     const center = getTouchCenter(e.touches[0], e.touches[1]);
-    const panDx = center.x - panStartX;
-    const panDy = center.y - panStartY;
+    const vp = document.getElementById('annotate-viewport');
+    const rect = vp.getBoundingClientRect();
+    // Zoom toward finger center
+    const cx = center.x - rect.left;
+    const cy = center.y - rect.top;
+    const ratio = newZoom / pinchStartZoom;
+    viewPanX = cx - (cx - pinchStartPanX) * ratio + (center.x - panStartX);
+    viewPanY = cy - (cy - pinchStartPanY) * ratio + (center.y - panStartY);
 
     viewZoom = newZoom;
-    viewPanX = pinchStartPanX + panDx;
-    viewPanY = pinchStartPanY + panDy;
     applyTransform();
   } else if (e.touches.length === 1) {
     const dx = e.touches[0].clientX - panStartX;
@@ -580,6 +597,14 @@ function onAnnoTouchEnd(e) {
   }
   if (e.touches.length === 0) {
     isTwoFinger = false;
+    // Snap back to centered if zoom near 1x
+    if (viewZoom < 1.05 && annoImg) {
+      viewZoom = 1;
+      const vp = document.getElementById('annotate-viewport');
+      viewPanX = (vp.offsetWidth - annoImg.width * baseScale) / 2;
+      viewPanY = (vp.offsetHeight - annoImg.height * baseScale) / 2;
+      applyTransform();
+    }
   }
 }
 
