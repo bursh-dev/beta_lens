@@ -798,7 +798,7 @@ function drawAnnotation() {
     // Label with high-contrast background
     const fontSize = Math.max(30, h.r * 0.65);
     annoCtx.font = `bold ${fontSize}px Courier New`;
-    const label = h.id + ' ' + h.kind.toUpperCase();
+    const label = h.kind.toUpperCase();
     const lw = annoCtx.measureText(label).width;
     annoCtx.fillStyle = 'rgba(0, 0, 0, 0.8)';
     annoCtx.fillRect(h.x + h.r + 4, h.y - fontSize * 0.45, lw + 10, fontSize + 6);
@@ -1352,7 +1352,7 @@ function drawLiveOverlay(tracking, holds, matchCount) {
     // Label with background
     const fs = Math.max(18, h.r * 0.55);
     liveCtx.font = `bold ${fs}px Courier New`;
-    const lbl = h.id + ' ' + h.kind.toUpperCase();
+    const lbl = h.kind.toUpperCase();
     const lw = liveCtx.measureText(lbl).width;
     liveCtx.fillStyle = 'rgba(0, 0, 0, 0.75)';
     liveCtx.fillRect(h.x + h.r + 4, h.y - fs * 0.45, lw + 8, fs + 4);
