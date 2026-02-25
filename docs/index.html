@@ -244,6 +244,7 @@
   </div>
   <div id="annotate-panel">
     <button class="pbtn pbtn-done" onclick="annotateBack()"><span class="pbtn-icon">&lt;</span>DONE</button>
+    <button class="pbtn pbtn-save" id="btn-save" onclick="annotateSave()"><span class="pbtn-icon">&#9654;</span>SAVE</button>
     <div class="panel-info">
       <span class="val" id="panel-holds">0</span>HOLDS
     </div>
@@ -255,8 +256,6 @@
     <button class="pbtn" onclick="annotateUndo()"><span class="pbtn-icon">&larr;</span>UNDO</button>
     <button class="pbtn" onclick="annotateClear()"><span class="pbtn-icon">X</span>CLR</button>
     <button class="pbtn" onclick="annotateResetZoom()"><span class="pbtn-icon">[ ]</span>1:1</button>
-    <div class="panel-spacer"></div>
-    <button class="pbtn pbtn-save" id="btn-save" onclick="annotateSave()"><span class="pbtn-icon">&#9654;</span>SAVE</button>
   </div>
   <input type="file" id="file-input" accept="image/*" style="display:none">
   <input type="file" id="capture-input" accept="image/*" capture="environment" style="display:none">
