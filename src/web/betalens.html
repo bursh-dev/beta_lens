@@ -161,11 +161,18 @@
   .popup-btn-close:active { background: #00ffcc !important; color: #000 !important; }
 
   /* --- Live --- */
-  #live { position: relative; }
+  #live { position: relative; overflow: hidden; }
+  #live-viewport { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: 0 0; }
   #live-video { width: 100%; height: 100%; object-fit: cover; }
   #live-canvas {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     pointer-events: none;
+  }
+  #live-zoom-indicator {
+    position: absolute; bottom: 12px; right: 12px; z-index: 15;
+    color: #ff3333; font-size: 14px; letter-spacing: 2px;
+    background: rgba(0,0,0,0.7); padding: 4px 8px; border: 1px solid #440000;
+    display: none;
   }
   #live-hud {
     position: absolute; top: 0; left: 0; right: 0;
@@ -266,9 +273,12 @@
 
 <!-- Live Tracking Screen -->
 <div id="live" class="screen">
-  <video id="live-video" autoplay playsinline muted></video>
-  <canvas id="live-canvas"></canvas>
+  <div id="live-viewport">
+    <video id="live-video" autoplay playsinline muted></video>
+    <canvas id="live-canvas"></canvas>
+  </div>
   <div class="scanline"></div>
+  <div id="live-zoom-indicator"></div>
   <div id="live-hud">
     <button class="btn small" id="live-back" onclick="stopLive()">Back</button>
     <div class="status" id="hud-status">INITIALIZING...</div>
@@ -318,6 +328,16 @@ const LONG_PRESS_MS = 400;
 let liveStream = null;
 let liveRunning = false;
 let liveVideo, liveCanvas, liveCtx;
+
+// Live zoom/pan state
+let liveZoom = 1;
+let livePanX = 0, livePanY = 0;
+let livePinchStartDist = 0, livePinchStartZoom = 1;
+let livePinchStartPanX = 0, livePinchStartPanY = 0;
+let livePanStartX = 0, livePanStartY = 0;
+let livePanViewStartX = 0, livePanViewStartY = 0;
+let liveIsTwoFinger = false;
+let liveZoomIndicatorTimer = null;
 let frameCount = 0;
 let trackedCount = 0;
 let lastFps = 0;
@@ -874,6 +894,7 @@ async function startLive() {
   if (!cvReady) { alert('OpenCV not ready'); return; }
 
   showScreen('live');
+  initLiveZoom();
 
   // Check camera API availability
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -1144,12 +1165,88 @@ function drawLiveOverlay(tracking, holds, matchCount) {
   }
 }
 
+// --- Live zoom/pan ---
+function applyLiveTransform() {
+  const vp = document.getElementById('live-viewport');
+  vp.style.transform = `translate(${livePanX}px, ${livePanY}px) scale(${liveZoom})`;
+  const ind = document.getElementById('live-zoom-indicator');
+  if (liveZoom > 1.05) {
+    ind.textContent = `${liveZoom.toFixed(1)}x`;
+    ind.style.display = 'block';
+    clearTimeout(liveZoomIndicatorTimer);
+    liveZoomIndicatorTimer = setTimeout(() => { ind.style.display = 'none'; }, 2000);
+  } else {
+    ind.style.display = 'none';
+  }
+}
+
+function onLiveTouchStart(e) {
+  if (e.touches.length === 2) {
+    e.preventDefault();
+    liveIsTwoFinger = true;
+    livePinchStartDist = getTouchDist(e.touches[0], e.touches[1]);
+    livePinchStartZoom = liveZoom;
+    livePinchStartPanX = livePanX;
+    livePinchStartPanY = livePanY;
+    const c = getTouchCenter(e.touches[0], e.touches[1]);
+    livePanStartX = c.x;
+    livePanStartY = c.y;
+  } else if (e.touches.length === 1 && liveZoom > 1.05) {
+    e.preventDefault();
+    liveIsTwoFinger = false;
+    livePanStartX = e.touches[0].clientX;
+    livePanStartY = e.touches[0].clientY;
+    livePanViewStartX = livePanX;
+    livePanViewStartY = livePanY;
+  }
+}
+
+function onLiveTouchMove(e) {
+  if (e.touches.length === 2) {
+    e.preventDefault();
+    liveIsTwoFinger = true;
+    const dist = getTouchDist(e.touches[0], e.touches[1]);
+    liveZoom = Math.max(1, Math.min(5, livePinchStartZoom * (dist / livePinchStartDist)));
+    const c = getTouchCenter(e.touches[0], e.touches[1]);
+    livePanX = livePinchStartPanX + (c.x - livePanStartX);
+    livePanY = livePinchStartPanY + (c.y - livePanStartY);
+    applyLiveTransform();
+  } else if (e.touches.length === 1 && liveZoom > 1.05 && !liveIsTwoFinger) {
+    e.preventDefault();
+    livePanX = livePanViewStartX + (e.touches[0].clientX - livePanStartX);
+    livePanY = livePanViewStartY + (e.touches[0].clientY - livePanStartY);
+    applyLiveTransform();
+  }
+}
+
+function onLiveTouchEnd(e) {
+  if (e.touches.length === 0) {
+    liveIsTwoFinger = false;
+    // Snap back to 1x if barely zoomed
+    if (liveZoom < 1.05) {
+      liveZoom = 1; livePanX = 0; livePanY = 0;
+      applyLiveTransform();
+    }
+  }
+}
+
+function initLiveZoom() {
+  liveZoom = 1; livePanX = 0; livePanY = 0;
+  const el = document.getElementById('live');
+  el.addEventListener('touchstart', onLiveTouchStart, { passive: false });
+  el.addEventListener('touchmove', onLiveTouchMove, { passive: false });
+  el.addEventListener('touchend', onLiveTouchEnd, { passive: false });
+}
+
 function stopLive() {
   liveRunning = false;
   if (liveStream) {
     liveStream.getTracks().forEach(t => t.stop());
     liveStream = null;
   }
+  liveZoom = 1; livePanX = 0; livePanY = 0;
+  const vp = document.getElementById('live-viewport');
+  if (vp) vp.style.transform = '';
   showMenu();
 }
 
