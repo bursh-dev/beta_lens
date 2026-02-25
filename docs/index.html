@@ -117,6 +117,7 @@
     line-height: 1.4;
   }
   .panel-info .val { color: #ff3333; display: block; font-size: 10px; }
+  .panel-ver { color: #440000; font-size: 7px; text-align: center; padding: 4px 2px; margin-top: auto; letter-spacing: 0; }
 
   /* Zoom indicator (top right of viewport) */
   #zoom-indicator {
@@ -263,6 +264,7 @@
     <button class="pbtn" onclick="annotateUndo()"><span class="pbtn-icon">&larr;</span>UNDO</button>
     <button class="pbtn" onclick="annotateClear()"><span class="pbtn-icon">X</span>CLR</button>
     <button class="pbtn" onclick="annotateResetZoom()"><span class="pbtn-icon">[ ]</span>1:1</button>
+    <div class="panel-ver" id="panel-ver"></div>
   </div>
   <input type="file" id="file-input" accept="image/*" style="display:none">
   <input type="file" id="capture-input" accept="image/*" capture="environment" style="display:none">
@@ -283,11 +285,14 @@
     <button class="btn small" id="live-back" onclick="stopLive()">Back</button>
     <div class="status" id="hud-status">INITIALIZING...</div>
     <div class="telemetry" id="hud-telemetry"></div>
+    <div class="telemetry" id="hud-ver"></div>
   </div>
   <div id="live-error"></div>
 </div>
 
 <script>
+const BUILD_VER = '250225.1';
+
 // ===== GLOBALS =====
 let cvReady = false;
 let routeData = null;       // { anchor: { dataUrl, width, height }, holds: [...] }
@@ -348,6 +353,11 @@ let fpsTime = 0;
 function onOpenCvReady() {
   cvReady = true;
   document.getElementById('loading').classList.add('hidden');
+  // Set build version in both screens
+  const pv = document.getElementById('panel-ver');
+  const hv = document.getElementById('hud-ver');
+  if (pv) pv.textContent = 'v' + BUILD_VER;
+  if (hv) hv.textContent = 'BL v' + BUILD_VER;
   showMenu();
 }
 
