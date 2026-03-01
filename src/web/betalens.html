@@ -357,7 +357,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.20';
+const BUILD_VER = '260301.21';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -1742,17 +1742,6 @@ function trackingLoop() {
   let matchCount = 0;
   let transformedHolds = [];
 
-  // Skip ORB processing every other frame — reuse last result
-  const skipOrb = (frameCount % 2 !== 0) && smoothedHolds && smoothedHolds.length > 0;
-  if (skipOrb) {
-    transformedHolds = smoothedHolds;
-    tracking = true;
-    matchCount = 0; // no new match this frame
-    drawLiveOverlay(tracking, transformedHolds, matchCount);
-    requestAnimationFrame(trackingLoop);
-    return;
-  }
-
   const primaryReady = anchorFeatures.length > 0
     && anchorFeatures[0] && anchorFeatures[0].desc && anchorFeatures[0].desc.rows > 0;
 
@@ -1773,15 +1762,17 @@ function trackingLoop() {
         let bestHr = bestResult.goodCount >= 10 ? computeHomography(bestResult, frameKp) : null;
 
         // If not good enough (by inlier count), try other anchors
+        // Anchor hysteresis: require 30% more inliers to switch anchors
         let bestInliers = bestHr ? bestHr.inliers : 0;
         if (bestInliers < 20 && anchorFeatures.length > 1) {
+          const switchThreshold = Math.round(bestInliers * 1.3);
           for (let i = 0; i < anchorFeatures.length; i++) {
             if (i === activeAnchorIdx) continue;
             if (!anchorFeatures[i] || !anchorFeatures[i].desc) continue;
             const result = tryMatchAnchor(anchorFeatures[i], frameKp, frameDesc);
             if (result.goodCount >= 10) {
               const hr = computeHomography(result, frameKp);
-              if (hr && hr.inliers > bestInliers) {
+              if (hr && hr.inliers > Math.max(bestInliers, switchThreshold)) {
                 if (bestHr && bestHr.H) bestHr.H.delete();
                 bestResult = result;
                 bestHr = hr;
@@ -1796,7 +1787,22 @@ function trackingLoop() {
         matchCount = bestHr ? bestHr.inliers : bestResult.goodCount;
 
         if (bestHr) {
-          transformedHolds = bestHr.holds;
+          let rawHolds = bestHr.holds;
+
+          // Per-hold jump rejection: if a hold moved too far from last frame, keep old position
+          if (smoothedHolds && smoothedHolds.length === rawHolds.length) {
+            const maxJump = 60; // max px per frame
+            transformedHolds = rawHolds.map((h, i) => {
+              const prev = smoothedHolds[i];
+              const dx = h.x - prev.x, dy = h.y - prev.y;
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              if (dist > maxJump) return prev; // reject jump, keep old position
+              return h;
+            });
+          } else {
+            transformedHolds = rawHolds;
+          }
+
           tracking = true;
           trackedCount++;
           activeAnchorIdx = bestResult.anchorIdx;
