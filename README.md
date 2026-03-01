@@ -91,6 +91,7 @@ Terminator HUD aesthetic — red on black, monospace font, scan lines. Left side
 - [ ] Multi-wall support — detect which wall you're looking at automatically
 - [ ] Social features — share beta, comment on routes, video recording with overlay
 - [ ] AI hold detection — auto-detect holds from wall photo using computer vision/ML
+- [ ] Shape fill markers — flood-fill hold color to paint actual hold shape instead of circle, with per-hold toggle (shape/circle fallback)
 
 ### Technical Debt
 - [ ] Move from localStorage to IndexedDB for larger route storage

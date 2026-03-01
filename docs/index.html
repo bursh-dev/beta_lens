@@ -117,6 +117,8 @@
   .pbtn-done:active { background: #456; color: #fff; }
   .pbtn-angle { color: #ff9100; }
   .pbtn-angle .pbtn-icon { color: #ff9100; }
+  .pbtn-tune { color: #00e5ff; }
+  .pbtn-tune .pbtn-icon { color: #00e5ff; }
 
   /* Panel info */
   .panel-info {
@@ -313,6 +315,7 @@
       <span class="val" id="panel-angles">1</span>ANGLES
     </div>
     <button class="pbtn pbtn-angle" id="btn-add-angle" onclick="startAddAngle()" style="display:none"><span class="pbtn-icon">&#8635;</span>ANGLE</button>
+    <button class="pbtn pbtn-tune" id="btn-tune" onclick="startTuning()" style="display:none"><span class="pbtn-icon">&#9678;</span>TUNE</button>
     <button class="pbtn" onclick="annotateResetZoom()"><span class="pbtn-icon">[ ]</span>1:1</button>
   </div>
   <input type="file" id="file-input" accept="image/*" style="display:none">
@@ -335,12 +338,16 @@
     <div class="status" id="hud-status">INITIALIZING...</div>
     <div class="telemetry" id="hud-telemetry"></div>
     <div class="telemetry" id="hud-ver"></div>
+    <div id="tune-hud" style="display:none">
+      <div id="tune-pct" style="font-size:48px;font-weight:bold;text-align:center;color:#00e5ff;text-shadow:0 0 20px #00e5ff,0 0 40px #006080;margin:8px 0;"></div>
+      <div id="tune-status" style="font-size:12px;text-align:center;color:#aaa;letter-spacing:2px;"></div>
+    </div>
   </div>
   <div id="live-error"></div>
 </div>
 
 <script>
-const BUILD_VER = '260301.11';
+const BUILD_VER = '260301.12';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -421,6 +428,13 @@ let trackedCount = 0;
 let lastFps = 0;
 let fpsFrames = 0;
 let fpsTime = 0;
+// Tuning mode
+let tuningMode = false;
+let lastCaptureTime = 0;
+const TUNE_MIN_MATCHES = 30;      // min good matches to auto-capture
+const TUNE_MIN_DISPLACEMENT = 0.15; // min corner displacement as fraction of diagonal
+const TUNE_CAPTURE_INTERVAL = 2000; // ms between captures
+const TUNE_MAX_ANCHORS = 8;        // max total anchors
 // Hold last position on brief tracking loss
 let smoothedHolds = null;
 let trackLostFrames = 0;
@@ -1256,22 +1270,29 @@ function reloadPrimaryAnchor() {
 }
 
 function updateAddAngleButton() {
-  const btn = document.getElementById('btn-add-angle');
-  const show = annoMode === 'primary'
+  const hasRoute = annoMode === 'primary'
     && currentRouteIdx >= 0
     && routeData && routeData.anchor
-    && routeData.holds && routeData.holds.length > 0
-    && (!routeData.extraAnchors || routeData.extraAnchors.length < 4);
-  btn.style.display = show ? '' : 'none';
+    && routeData.holds && routeData.holds.length > 0;
+  const totalAnchors = 1 + (routeData && routeData.extraAnchors ? routeData.extraAnchors.length : 0);
+
+  document.getElementById('btn-add-angle').style.display =
+    hasRoute && totalAnchors < TUNE_MAX_ANCHORS ? '' : 'none';
+  document.getElementById('btn-tune').style.display =
+    hasRoute && cvReady && totalAnchors < TUNE_MAX_ANCHORS ? '' : 'none';
 
   const section = document.getElementById('panel-angles-section');
   if (routeData && routeData.extraAnchors && routeData.extraAnchors.length > 0) {
     section.style.display = '';
-    document.getElementById('panel-angles').textContent =
-      1 + routeData.extraAnchors.length;
+    document.getElementById('panel-angles').textContent = totalAnchors;
   } else {
     section.style.display = 'none';
   }
+}
+
+function getTunePercent() {
+  const total = 1 + (routeData && routeData.extraAnchors ? routeData.extraAnchors.length : 0);
+  return Math.min(100, Math.round((total / TUNE_MAX_ANCHORS) * 100));
 }
 
 // ===== LIVE TRACKING =====
@@ -1441,8 +1462,7 @@ function computeHomography(matchResult, frameKp) {
       transformedHolds.push({ id: hold.id, x: cx, y: cy, r, kind: hold.kind });
       pts.delete(); dst.delete(); ptsR.delete(); dstR.delete();
     }
-    result = { holds: transformedHolds };
-    H.delete();
+    result = { holds: transformedHolds, H };
   }
   mask.delete(); srcPts.delete(); dstPts.delete();
   return result;
@@ -1498,6 +1518,11 @@ function trackingLoop() {
             tracking = true;
             trackedCount++;
             activeAnchorIdx = bestResult.anchorIdx;
+            // Auto-capture for tuning mode
+            if (tuningMode && hr.H) {
+              tuneAutoCapture(matchCount, hr.H, bestResult.anchor);
+            }
+            if (hr.H) hr.H.delete();
           }
         }
       }
@@ -1680,6 +1705,8 @@ function initLiveZoom() {
 
 function stopLive() {
   liveRunning = false;
+  const wasTuning = tuningMode;
+  tuningMode = false;
   cleanupTracker();
   if (liveStream) {
     liveStream.getTracks().forEach(t => t.stop());
@@ -1688,7 +1715,123 @@ function stopLive() {
   liveZoom = 1; livePanX = 0; livePanY = 0;
   const vp = document.getElementById('live-viewport');
   if (vp) vp.style.transform = '';
-  showMenu();
+  document.getElementById('tune-hud').style.display = 'none';
+  if (wasTuning) {
+    // Return to annotation screen
+    startAnnotate(currentRouteIdx);
+  } else {
+    showMenu();
+  }
+}
+
+function startTuning() {
+  if (!routeData) { alert('Save a route first'); return; }
+  if (!cvReady) { alert('OpenCV not ready'); return; }
+  tuningMode = true;
+  lastCaptureTime = 0;
+  startLive();
+  // Show tuning HUD after live starts
+  setTimeout(() => {
+    const th = document.getElementById('tune-hud');
+    if (th) {
+      th.style.display = '';
+      document.getElementById('tune-pct').textContent = getTunePercent() + '%';
+      document.getElementById('tune-status').textContent = 'MOVE CAMERA SLOWLY AROUND THE WALL';
+    }
+    document.getElementById('live-back').textContent = 'Done';
+  }, 100);
+}
+
+function computeCornerDisplacement(H, w, h) {
+  // Measure how much the anchor corners move under the homography
+  const corners = [[0, 0], [w, 0], [w, h], [0, h]];
+  let totalDisp = 0;
+  for (const [cx, cy] of corners) {
+    const pts = cv.matFromArray(1, 1, cv.CV_32FC2, [cx, cy]);
+    const dst = new cv.Mat();
+    cv.perspectiveTransform(pts, dst, H);
+    const dx = dst.data32F[0] - cx, dy = dst.data32F[1] - cy;
+    totalDisp += Math.sqrt(dx * dx + dy * dy);
+    pts.delete(); dst.delete();
+  }
+  const diagonal = Math.sqrt(w * w + h * h);
+  return (totalDisp / 4) / diagonal; // normalized average displacement
+}
+
+function tuneAutoCapture(matchCount, H, matchedAnchor) {
+  if (!tuningMode || !H || matchCount < TUNE_MIN_MATCHES) return;
+  const totalAnchors = 1 + (routeData.extraAnchors ? routeData.extraAnchors.length : 0);
+  if (totalAnchors >= TUNE_MAX_ANCHORS) return;
+
+  const now = performance.now();
+  if (now - lastCaptureTime < TUNE_CAPTURE_INTERVAL) return;
+
+  // Check viewpoint is different enough
+  const disp = computeCornerDisplacement(H, matchedAnchor.mat.cols, matchedAnchor.mat.rows);
+  if (disp < TUNE_MIN_DISPLACEMENT) return;
+
+  // Auto-capture current frame as new anchor
+  lastCaptureTime = now;
+
+  // Downscale frame to max 1024px
+  const maxDim = 1024;
+  let sw = liveCanvas.width, sh = liveCanvas.height;
+  const scale = Math.min(maxDim / sw, maxDim / sh, 1);
+  sw = Math.round(sw * scale);
+  sh = Math.round(sh * scale);
+
+  const tmpCanvas = document.createElement('canvas');
+  tmpCanvas.width = sw; tmpCanvas.height = sh;
+  const tmpCtx = tmpCanvas.getContext('2d');
+  tmpCtx.drawImage(liveCanvas, 0, 0, sw, sh);
+  const dataUrl = tmpCanvas.toDataURL('image/jpeg', 0.8);
+
+  // Transform holds from matched anchor to frame coordinates, then scale
+  const holds = [];
+  for (const hold of matchedAnchor.holds) {
+    const pts = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x, hold.y]);
+    const dst = new cv.Mat();
+    cv.perspectiveTransform(pts, dst, H);
+    const ptsR = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x + hold.r, hold.y]);
+    const dstR = new cv.Mat();
+    cv.perspectiveTransform(ptsR, dstR, H);
+    const cx = dst.data32F[0], cy = dst.data32F[1];
+    const r = Math.sqrt((dstR.data32F[0] - cx) ** 2 + (dstR.data32F[1] - cy) ** 2);
+    holds.push({
+      id: hold.id, kind: hold.kind,
+      x: Math.round(cx * scale), y: Math.round(cy * scale), r: Math.round(r * scale)
+    });
+    pts.delete(); dst.delete(); ptsR.delete(); dstR.delete();
+  }
+
+  // Save extra anchor
+  if (!routeData.extraAnchors) routeData.extraAnchors = [];
+  routeData.extraAnchors.push({
+    dataUrl, width: sw, height: sh, holds,
+    addedAt: new Date().toISOString()
+  });
+
+  const routes = getRoutes();
+  routes[currentRouteIdx] = routeData;
+  saveRoutes(routes);
+
+  // Load new anchor features for tracking
+  const newIdx = routeData.extraAnchors.length; // 1-based (0 is primary)
+  loadAnchorFeatures(dataUrl, holds, newIdx);
+
+  // Update HUD
+  const pct = getTunePercent();
+  document.getElementById('tune-pct').textContent = pct + '%';
+  document.getElementById('tune-status').textContent = 'CAPTURED! — ' +
+    (1 + routeData.extraAnchors.length) + ' ANGLES';
+  setTimeout(() => {
+    if (tuningMode) {
+      document.getElementById('tune-status').textContent =
+        pct >= 100 ? 'TUNING COMPLETE' : 'MOVE CAMERA SLOWLY AROUND THE WALL';
+    }
+  }, 1500);
+
+  console.log(`Tune: captured angle ${newIdx + 1}, displacement=${disp.toFixed(3)}, matches=${matchCount}`);
 }
 
 // Handle resize
