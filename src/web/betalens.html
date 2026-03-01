@@ -357,7 +357,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.19';
+const BUILD_VER = '260301.20';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -1643,16 +1643,6 @@ function tryMatchAnchor(anchor, frameKp, frameDesc) {
   return { anchorIdx: anchor.idx, anchor, goodMatches: good, goodCount: good.length };
 }
 
-function isConvexQuad(corners) {
-  // Check that 4 corners form a convex quadrilateral (no flipping/collapsing)
-  for (let i = 0; i < 4; i++) {
-    const a = corners[i], b = corners[(i + 1) % 4], c = corners[(i + 2) % 4];
-    const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
-    if (cross <= 0) return false; // must all be positive (CCW winding)
-  }
-  return true;
-}
-
 function validateHomography(H, w, h) {
   // Transform anchor corners and check the result is geometrically valid
   const srcCorners = [[0, 0], [w, 0], [w, h], [0, h]];
@@ -1665,12 +1655,16 @@ function validateHomography(H, w, h) {
     pts.delete(); dst.delete();
   }
 
-  // Check convexity (rejects flipped/collapsed transforms)
-  if (!isConvexQuad(dstCorners)) return false;
+  // Check convexity — all cross products must have same sign (CW or CCW)
+  let pos = 0, neg = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = dstCorners[i], b = dstCorners[(i + 1) % 4], c = dstCorners[(i + 2) % 4];
+    const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+    if (cross > 0) pos++; else if (cross < 0) neg++;
+  }
+  if (pos !== 4 && neg !== 4) return false;
 
-  // Check area ratio — transformed quad area vs original
-  const origArea = w * h;
-  // Shoelace formula
+  // Check area ratio — transformed quad area vs original (Shoelace)
   let area = 0;
   for (let i = 0; i < 4; i++) {
     const j = (i + 1) % 4;
@@ -1678,13 +1672,12 @@ function validateHomography(H, w, h) {
     area -= dstCorners[j][0] * dstCorners[i][1];
   }
   area = Math.abs(area) / 2;
-  const areaRatio = area / origArea;
-  // Reject if area shrunk below 5% or expanded beyond 20x
-  if (areaRatio < 0.05 || areaRatio > 20) return false;
+  const areaRatio = area / (w * h);
+  if (areaRatio < 0.02 || areaRatio > 50) return false;
 
-  // Check determinant of top-left 2x2 (should be positive, not near zero)
+  // Check determinant — reject degenerate transforms
   const det = H.data64F[0] * H.data64F[4] - H.data64F[1] * H.data64F[3];
-  if (det < 0.1) return false;
+  if (Math.abs(det) < 0.05) return false;
 
   return true;
 }
@@ -1765,22 +1758,7 @@ function trackingLoop() {
 
   if (primaryReady) {
     try {
-      // Downscale frame for faster ORB processing (max 640px)
-      const fw = liveCanvas.width, fh = liveCanvas.height;
-      const orbScale = Math.min(640 / fw, 640 / fh, 1);
-      const ow = Math.round(fw * orbScale), oh = Math.round(fh * orbScale);
-      let imgData;
-      if (orbScale < 1) {
-        if (!this._orbCanvas) {
-          this._orbCanvas = document.createElement('canvas');
-        }
-        this._orbCanvas.width = ow; this._orbCanvas.height = oh;
-        const octx = this._orbCanvas.getContext('2d');
-        octx.drawImage(liveCanvas, 0, 0, ow, oh);
-        imgData = octx.getImageData(0, 0, ow, oh);
-      } else {
-        imgData = liveCtx.getImageData(0, 0, fw, fh);
-      }
+      const imgData = liveCtx.getImageData(0, 0, liveCanvas.width, liveCanvas.height);
       const frameMat = cv.matFromImageData(imgData);
       const frameGray = new cv.Mat();
       cv.cvtColor(frameMat, frameGray, cv.COLOR_RGBA2GRAY);
@@ -1818,11 +1796,7 @@ function trackingLoop() {
         matchCount = bestHr ? bestHr.inliers : bestResult.goodCount;
 
         if (bestHr) {
-          // Scale holds back to full canvas coordinates
-          const invScale = 1 / orbScale;
-          transformedHolds = bestHr.holds.map(h => ({
-            ...h, x: h.x * invScale, y: h.y * invScale, r: h.r * invScale
-          }));
+          transformedHolds = bestHr.holds;
           tracking = true;
           trackedCount++;
           activeAnchorIdx = bestResult.anchorIdx;
