@@ -127,6 +127,11 @@
   .panel-info .val { color: #fff; display: block; font-size: 10px; font-weight: bold; }
   .panel-grade { cursor: pointer; }
   .panel-grade .val { color: #ff8844; }
+  .panel-color { cursor: pointer; }
+  #panel-color-swatch {
+    display: block; width: 16px; height: 16px; margin: 0 auto 2px;
+    border-radius: 50%; border: 2px solid #555;
+  }
 
   /* Version — top right corner overlay */
   .build-ver {
@@ -293,6 +298,9 @@
     <div class="panel-info panel-grade" onclick="cycleGrade()">
       <span class="val" id="panel-grade">?</span>GRADE
     </div>
+    <div class="panel-info panel-color" onclick="cycleRouteColor()">
+      <span class="val" id="panel-color-swatch"></span>COLOR
+    </div>
     <button class="pbtn" onclick="annotateLoadImage()"><span class="pbtn-icon">+</span>LOAD</button>
     <button class="pbtn" onclick="annotateCapturePhoto()"><span class="pbtn-icon">O</span>CAM</button>
     <button class="pbtn" onclick="annotateUndo()"><span class="pbtn-icon">&larr;</span>UNDO</button>
@@ -324,15 +332,27 @@
 </div>
 
 <script>
-const BUILD_VER = '250225.7';
+const BUILD_VER = '260301.1';
 
-// Hold type color presets
+// Hold type color presets (for labels only now)
 const HOLD_COLORS = {
-  start:  { color: '#44ff44', fill: 'rgba(68,255,68,0.2)', glow: 'rgba(68,255,68,0.4)', dim: 'rgba(68,255,68,0.15)' },
-  hand:   { color: '#44aaff', fill: 'rgba(68,170,255,0.2)', glow: 'rgba(68,170,255,0.4)', dim: 'rgba(68,170,255,0.15)' },
-  foot:   { color: '#ffcc44', fill: 'rgba(255,204,68,0.2)', glow: 'rgba(255,204,68,0.4)', dim: 'rgba(255,204,68,0.15)' },
-  finish: { color: '#ff4466', fill: 'rgba(255,68,102,0.2)', glow: 'rgba(255,68,102,0.4)', dim: 'rgba(255,68,102,0.15)' },
+  start:  { color: '#44ff44' },
+  hand:   { color: '#44aaff' },
+  foot:   { color: '#ffcc44' },
+  finish: { color: '#ff4466' },
 };
+
+// Route color presets — the paint color for all holds in a route
+const ROUTE_COLORS = [
+  { name: 'CYAN',    hex: '#00e5ff', rgb: [0, 229, 255] },
+  { name: 'MAGENTA', hex: '#ff44cc', rgb: [255, 68, 204] },
+  { name: 'LIME',    hex: '#76ff03', rgb: [118, 255, 3] },
+  { name: 'ORANGE',  hex: '#ff9100', rgb: [255, 145, 0] },
+  { name: 'PURPLE',  hex: '#b388ff', rgb: [179, 136, 255] },
+  { name: 'YELLOW',  hex: '#ffea00', rgb: [255, 234, 0] },
+  { name: 'RED',     hex: '#ff1744', rgb: [255, 23, 68] },
+  { name: 'WHITE',   hex: '#ffffff', rgb: [255, 255, 255] },
+];
 const HOLD_TYPES = ['start', 'hand', 'foot', 'finish'];
 const GRADE_OPTIONS = ['?','V0','V1','V2','V3','V4','V5','V6','V7','V8','V9','V10','V11','V12','V13','V14','V15','V16'];
 
@@ -560,6 +580,9 @@ function startAnnotate(routeIdx) {
   currentGrade = (routeData && routeData.grade) ? routeData.grade : '?';
   document.getElementById('panel-grade').textContent = currentGrade;
 
+  currentColorIdx = (routeData && routeData.colorIdx !== undefined) ? routeData.colorIdx : 0;
+  updateColorSwatch();
+
   // If we have a saved route, reload it
   if (routeData && routeData.anchor && routeData.anchor.dataUrl) {
     const img = new Image();
@@ -786,68 +809,44 @@ function drawAnnotation() {
   annoCtx.clearRect(0, 0, annoCanvas.width, annoCanvas.height);
   annoCtx.drawImage(annoImg, 0, 0);
 
+  const rc = ROUTE_COLORS[currentColorIdx];
   for (let i = 0; i < annoHolds.length; i++) {
     const h = annoHolds[i];
     const isEditing = (i === editingHoldIdx);
-    const preset = HOLD_COLORS[h.kind] || HOLD_COLORS.hand;
-    const color = isEditing ? '#ffff00' : preset.color;
-    const fillColor = isEditing ? 'rgba(255, 255, 0, 0.25)' : preset.fill;
-    const glowColor = isEditing ? 'rgba(255, 255, 0, 0.5)' : preset.glow;
+    const [r, g, b] = isEditing ? [255, 255, 0] : rc.rgb;
 
-    // Double outer glow for visibility
+    // Soft outer glow
+    const grad = annoCtx.createRadialGradient(h.x, h.y, h.r * 0.3, h.x, h.y, h.r * 1.2);
+    grad.addColorStop(0, `rgba(${r},${g},${b},0.55)`);
+    grad.addColorStop(0.7, `rgba(${r},${g},${b},0.35)`);
+    grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
     annoCtx.beginPath();
-    annoCtx.arc(h.x, h.y, h.r + 10, 0, Math.PI * 2);
-    annoCtx.strokeStyle = isEditing ? 'rgba(255,255,0,0.15)' : preset.dim;
-    annoCtx.lineWidth = 12;
-    annoCtx.stroke();
-
-    // Inner glow
-    annoCtx.beginPath();
-    annoCtx.arc(h.x, h.y, h.r + 4, 0, Math.PI * 2);
-    annoCtx.strokeStyle = glowColor;
-    annoCtx.lineWidth = 8;
-    annoCtx.stroke();
-
-    // Filled circle
-    annoCtx.beginPath();
-    annoCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    annoCtx.fillStyle = fillColor;
+    annoCtx.arc(h.x, h.y, h.r * 1.2, 0, Math.PI * 2);
+    annoCtx.fillStyle = grad;
     annoCtx.fill();
 
-    // Main outline — thick white-green
+    // Solid paint fill
     annoCtx.beginPath();
     annoCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    annoCtx.strokeStyle = color;
-    annoCtx.lineWidth = 5;
-    annoCtx.stroke();
-
-    // Crosshair
-    const cross = h.r * 0.45;
-    annoCtx.beginPath();
-    annoCtx.moveTo(h.x - cross, h.y); annoCtx.lineTo(h.x + cross, h.y);
-    annoCtx.moveTo(h.x, h.y - cross); annoCtx.lineTo(h.x, h.y + cross);
-    annoCtx.strokeStyle = color;
-    annoCtx.lineWidth = 3;
-    annoCtx.stroke();
-
-    // Center dot
-    annoCtx.beginPath();
-    annoCtx.arc(h.x, h.y, 5, 0, Math.PI * 2);
-    annoCtx.fillStyle = '#fff';
+    annoCtx.fillStyle = `rgba(${r},${g},${b},0.45)`;
     annoCtx.fill();
 
-    // Label with high-contrast background
-    const fontSize = Math.max(30, h.r * 0.65);
+    // Thin border
+    annoCtx.beginPath();
+    annoCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+    annoCtx.strokeStyle = `rgba(${r},${g},${b},0.8)`;
+    annoCtx.lineWidth = 2;
+    annoCtx.stroke();
+
+    // Type label
+    const fontSize = Math.max(22, h.r * 0.5);
     annoCtx.font = `bold ${fontSize}px Courier New`;
     const label = h.kind.toUpperCase();
     const lw = annoCtx.measureText(label).width;
-    annoCtx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    annoCtx.fillRect(h.x + h.r + 4, h.y - fontSize * 0.45, lw + 10, fontSize + 6);
-    annoCtx.strokeStyle = color;
-    annoCtx.lineWidth = 1;
-    annoCtx.strokeRect(h.x + h.r + 4, h.y - fontSize * 0.45, lw + 10, fontSize + 6);
-    annoCtx.fillStyle = '#fff';
-    annoCtx.fillText(label, h.x + h.r + 9, h.y + fontSize * 0.3);
+    annoCtx.fillStyle = `rgba(0,0,0,0.6)`;
+    annoCtx.fillRect(h.x - lw / 2 - 4, h.y + h.r + 4, lw + 8, fontSize + 4);
+    annoCtx.fillStyle = `rgb(${r},${g},${b})`;
+    annoCtx.fillText(label, h.x - lw / 2, h.y + h.r + fontSize + 2);
   }
   updateAnnotateStatus();
   updateSaveButton();
@@ -966,6 +965,17 @@ function cycleGrade() {
   document.getElementById('panel-grade').textContent = currentGrade;
 }
 
+function cycleRouteColor() {
+  currentColorIdx = (currentColorIdx + 1) % ROUTE_COLORS.length;
+  updateColorSwatch();
+  if (annoImg) drawAnnotation();
+}
+
+function updateColorSwatch() {
+  const swatch = document.getElementById('panel-color-swatch');
+  swatch.style.background = ROUTE_COLORS[currentColorIdx].hex;
+}
+
 function annotateResetZoom() {
   if (!annoImg) return;
   const vp = document.getElementById('annotate-viewport');
@@ -1024,6 +1034,7 @@ function loadImageFile(file) {
 
 let annoSavedSnapshot = '';  // track if holds changed since last save
 let currentGrade = '?';      // route grade (V0-V16)
+let currentColorIdx = 0;     // index into ROUTE_COLORS
 
 function annotateSave() {
   if (!annoImg || annoHolds.length === 0) {
@@ -1056,6 +1067,7 @@ function annotateSave() {
     anchor: { dataUrl, width: sw, height: sh },
     holds: scaledHolds,
     grade: currentGrade,
+    colorIdx: currentColorIdx,
     name: routeData && routeData.name ? routeData.name : 'Route ' + (getRoutes().length + 1),
     savedAt: new Date().toISOString()
   };
@@ -1350,55 +1362,43 @@ function drawLiveOverlay(tracking, holds, matchCount) {
   // We already drew the video frame, now draw holds on top
   if (!tracking) return;
 
+  const rcIdx = routeData && routeData.colorIdx !== undefined ? routeData.colorIdx : 0;
+  const rc = ROUTE_COLORS[rcIdx] || ROUTE_COLORS[0];
+  const [cr, cg, cb] = rc.rgb;
+
   for (const h of holds) {
-    const p = HOLD_COLORS[h.kind] || HOLD_COLORS.hand;
-    // Double outer glow
+    // Soft radial glow
+    const grad = liveCtx.createRadialGradient(h.x, h.y, h.r * 0.3, h.x, h.y, h.r * 1.2);
+    grad.addColorStop(0, `rgba(${cr},${cg},${cb},0.5)`);
+    grad.addColorStop(0.7, `rgba(${cr},${cg},${cb},0.3)`);
+    grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
     liveCtx.beginPath();
-    liveCtx.arc(h.x, h.y, h.r + 8, 0, Math.PI * 2);
-    liveCtx.strokeStyle = p.dim;
-    liveCtx.lineWidth = 10;
-    liveCtx.stroke();
-    // Inner glow
-    liveCtx.beginPath();
-    liveCtx.arc(h.x, h.y, h.r + 3, 0, Math.PI * 2);
-    liveCtx.strokeStyle = p.glow;
-    liveCtx.lineWidth = 6;
-    liveCtx.stroke();
-    // Filled
+    liveCtx.arc(h.x, h.y, h.r * 1.2, 0, Math.PI * 2);
+    liveCtx.fillStyle = grad;
+    liveCtx.fill();
+
+    // Solid paint
     liveCtx.beginPath();
     liveCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    liveCtx.fillStyle = p.fill;
+    liveCtx.fillStyle = `rgba(${cr},${cg},${cb},0.4)`;
     liveCtx.fill();
-    // Main outline
+
+    // Thin border
     liveCtx.beginPath();
     liveCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    liveCtx.strokeStyle = p.color;
-    liveCtx.lineWidth = 4;
+    liveCtx.strokeStyle = `rgba(${cr},${cg},${cb},0.7)`;
+    liveCtx.lineWidth = 2;
     liveCtx.stroke();
-    // Crosshair
-    const cross = h.r * 0.45;
-    liveCtx.beginPath();
-    liveCtx.moveTo(h.x - cross, h.y);
-    liveCtx.lineTo(h.x + cross, h.y);
-    liveCtx.moveTo(h.x, h.y - cross);
-    liveCtx.lineTo(h.x, h.y + cross);
-    liveCtx.strokeStyle = p.color;
-    liveCtx.lineWidth = 3;
-    liveCtx.stroke();
-    // Center dot
-    liveCtx.beginPath();
-    liveCtx.arc(h.x, h.y, 4, 0, Math.PI * 2);
-    liveCtx.fillStyle = '#fff';
-    liveCtx.fill();
-    // Label with background
-    const fs = Math.max(18, h.r * 0.55);
+
+    // Type label below
+    const fs = Math.max(14, h.r * 0.4);
     liveCtx.font = `bold ${fs}px Courier New`;
     const lbl = h.kind.toUpperCase();
     const lw = liveCtx.measureText(lbl).width;
-    liveCtx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-    liveCtx.fillRect(h.x + h.r + 4, h.y - fs * 0.45, lw + 8, fs + 4);
-    liveCtx.fillStyle = '#fff';
-    liveCtx.fillText(lbl, h.x + h.r + 8, h.y + fs * 0.3);
+    liveCtx.fillStyle = `rgba(0,0,0,0.6)`;
+    liveCtx.fillRect(h.x - lw / 2 - 3, h.y + h.r + 2, lw + 6, fs + 3);
+    liveCtx.fillStyle = `rgb(${cr},${cg},${cb})`;
+    liveCtx.fillText(lbl, h.x - lw / 2, h.y + h.r + fs);
   }
 }
 
