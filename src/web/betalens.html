@@ -343,15 +343,21 @@
     <div class="telemetry" id="hud-telemetry"></div>
     <div class="telemetry" id="hud-ver"></div>
     <div id="tune-hud" style="display:none">
-      <div id="tune-pct" style="font-size:48px;font-weight:bold;text-align:center;color:#00e5ff;text-shadow:0 0 20px #00e5ff,0 0 40px #006080;margin:8px 0;"></div>
-      <div id="tune-status" style="font-size:12px;text-align:center;color:#aaa;letter-spacing:2px;"></div>
+      <div id="tune-pct" style="font-size:36px;font-weight:bold;text-align:center;color:#00e5ff;text-shadow:0 0 20px #00e5ff,0 0 40px #006080;margin:4px 0;"></div>
+      <div id="tune-step-icon" style="font-size:48px;text-align:center;margin:4px 0;"></div>
+      <div id="tune-status" style="font-size:14px;text-align:center;color:#fff;letter-spacing:2px;font-weight:bold;margin:4px 0;"></div>
+      <div style="text-align:center;margin:8px 0;">
+        <button id="tune-capture-btn" onclick="tuneCaptureNow()" style="background:#00e5ff;color:#000;border:none;padding:14px 36px;font-size:18px;font-weight:bold;font-family:'Courier New',monospace;letter-spacing:2px;border-radius:8px;text-shadow:none;">CAPTURE</button>
+        <button id="tune-skip-btn" onclick="tuneSkipStep()" style="background:transparent;color:#aaa;border:1px solid #555;padding:10px 20px;font-size:12px;font-family:'Courier New',monospace;letter-spacing:1px;border-radius:6px;margin-left:8px;">SKIP</button>
+      </div>
+      <div id="tune-feedback" style="font-size:12px;text-align:center;color:#76ff03;letter-spacing:1px;min-height:16px;"></div>
     </div>
   </div>
   <div id="live-error"></div>
 </div>
 
 <script>
-const BUILD_VER = '260301.16';
+const BUILD_VER = '260301.17';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -434,11 +440,24 @@ let fpsFrames = 0;
 let fpsTime = 0;
 // Tuning mode
 let tuningMode = false;
-let lastCaptureTime = 0;
-const TUNE_MIN_MATCHES = 30;      // min good matches to auto-capture
-const TUNE_MIN_DISPLACEMENT = 0.15; // min corner displacement as fraction of diagonal
-const TUNE_CAPTURE_INTERVAL = 2000; // ms between captures
+let tuneStepIdx = 0;
+let tuneLastH = null;             // last valid H for capture
+let tuneLastAnchor = null;        // last matched anchor for capture
+let tuneLastMatchCount = 0;
 const TUNE_MAX_ANCHORS = 12;       // max total anchors
+const TUNE_STEPS = [
+  { icon: '⬅', text: '2 STEPS LEFT' },
+  { icon: '➡', text: '2 STEPS RIGHT' },
+  { icon: '🔍', text: 'MOVE CLOSER' },
+  { icon: '🔭', text: 'STEP BACK' },
+  { icon: '↙', text: 'ANGLE FROM LEFT' },
+  { icon: '↗', text: 'ANGLE FROM RIGHT' },
+  { icon: '⬆', text: 'LOOK UP SLIGHTLY' },
+  { icon: '⬇', text: 'LOOK DOWN SLIGHTLY' },
+  { icon: '↖', text: 'LEFT + CLOSER' },
+  { icon: '↘', text: 'RIGHT + CLOSER' },
+  { icon: '↕', text: 'LEFT + FURTHER' },
+];
 // Share state
 let pendingShareTrack = false;
 
@@ -1777,9 +1796,9 @@ function trackingLoop() {
           tracking = true;
           trackedCount++;
           activeAnchorIdx = bestResult.anchorIdx;
-          // Auto-capture for tuning mode
+          // Store frame for manual tuning capture
           if (tuningMode && bestHr.H) {
-            tuneAutoCapture(matchCount, bestHr.H, bestResult.anchor);
+            tuneStoreFrame(matchCount, bestHr.H, bestResult.anchor);
           }
           if (bestHr.H) bestHr.H.delete();
         }
@@ -1965,6 +1984,8 @@ function stopLive() {
   liveRunning = false;
   const wasTuning = tuningMode;
   tuningMode = false;
+  if (tuneLastH) { try { tuneLastH.delete(); } catch(e) {} tuneLastH = null; }
+  tuneLastAnchor = null;
   cleanupTracker();
   if (liveStream) {
     liveStream.getTracks().forEach(t => t.stop());
@@ -1986,50 +2007,63 @@ function startTuning() {
   if (!routeData) { alert('Save a route first'); return; }
   if (!cvReady) { alert('OpenCV not ready'); return; }
   tuningMode = true;
-  lastCaptureTime = 0;
+  tuneStepIdx = 0;
+  tuneLastH = null;
+  tuneLastAnchor = null;
+  tuneLastMatchCount = 0;
+  // Skip steps already captured
+  const existing = routeData.extraAnchors ? routeData.extraAnchors.length : 0;
+  tuneStepIdx = Math.min(existing, TUNE_STEPS.length);
   startLive();
-  // Show tuning HUD after live starts
   setTimeout(() => {
     const th = document.getElementById('tune-hud');
-    if (th) {
-      th.style.display = '';
-      document.getElementById('tune-pct').textContent = getTunePercent() + '%';
-      document.getElementById('tune-status').textContent = 'MOVE CAMERA SLOWLY AROUND THE WALL';
-    }
+    if (th) th.style.display = '';
+    updateTuneHud();
     document.getElementById('live-back').textContent = 'Done';
   }, 100);
 }
 
-function computeCornerDisplacement(H, w, h) {
-  // Measure how much the anchor corners move under the homography
-  const corners = [[0, 0], [w, 0], [w, h], [0, h]];
-  let totalDisp = 0;
-  for (const [cx, cy] of corners) {
-    const pts = cv.matFromArray(1, 1, cv.CV_32FC2, [cx, cy]);
-    const dst = new cv.Mat();
-    cv.perspectiveTransform(pts, dst, H);
-    const dx = dst.data32F[0] - cx, dy = dst.data32F[1] - cy;
-    totalDisp += Math.sqrt(dx * dx + dy * dy);
-    pts.delete(); dst.delete();
+function updateTuneHud() {
+  const pct = getTunePercent();
+  document.getElementById('tune-pct').textContent = pct + '%';
+  const totalAnchors = 1 + (routeData && routeData.extraAnchors ? routeData.extraAnchors.length : 0);
+  if (tuneStepIdx >= TUNE_STEPS.length || totalAnchors >= TUNE_MAX_ANCHORS) {
+    document.getElementById('tune-step-icon').textContent = '';
+    document.getElementById('tune-status').textContent = 'TUNING COMPLETE';
+    document.getElementById('tune-capture-btn').style.display = 'none';
+    document.getElementById('tune-skip-btn').style.display = 'none';
+  } else {
+    const step = TUNE_STEPS[tuneStepIdx];
+    document.getElementById('tune-step-icon').textContent = step.icon;
+    document.getElementById('tune-status').textContent = step.text;
+    document.getElementById('tune-capture-btn').style.display = '';
+    document.getElementById('tune-skip-btn').style.display = '';
   }
-  const diagonal = Math.sqrt(w * w + h * h);
-  return (totalDisp / 4) / diagonal; // normalized average displacement
+  document.getElementById('tune-feedback').textContent = '';
 }
 
-function tuneAutoCapture(matchCount, H, matchedAnchor) {
-  if (!tuningMode || !H || matchCount < TUNE_MIN_MATCHES) return;
+function tuneSkipStep() {
+  tuneStepIdx++;
+  updateTuneHud();
+}
+
+function tuneStoreFrame(matchCount, H, matchedAnchor) {
+  // Called from tracking loop — store latest valid H for manual capture
+  if (!tuningMode || !H) return;
+  if (tuneLastH) { try { tuneLastH.delete(); } catch(e) {} }
+  tuneLastH = H.clone();
+  tuneLastAnchor = matchedAnchor;
+  tuneLastMatchCount = matchCount;
+}
+
+function tuneCaptureNow() {
   const totalAnchors = 1 + (routeData.extraAnchors ? routeData.extraAnchors.length : 0);
   if (totalAnchors >= TUNE_MAX_ANCHORS) return;
 
-  const now = performance.now();
-  if (now - lastCaptureTime < TUNE_CAPTURE_INTERVAL) return;
-
-  // Check viewpoint is different enough
-  const disp = computeCornerDisplacement(H, matchedAnchor.mat.cols, matchedAnchor.mat.rows);
-  if (disp < TUNE_MIN_DISPLACEMENT) return;
-
-  // Auto-capture current frame as new anchor
-  lastCaptureTime = now;
+  if (!tuneLastH || !tuneLastAnchor) {
+    document.getElementById('tune-feedback').textContent = 'NO LOCK — AIM AT THE WALL';
+    return;
+  }
 
   // Downscale frame to max 1024px
   const maxDim = 1024;
@@ -2046,13 +2080,13 @@ function tuneAutoCapture(matchCount, H, matchedAnchor) {
 
   // Transform holds from matched anchor to frame coordinates, then scale
   const holds = [];
-  for (const hold of matchedAnchor.holds) {
+  for (const hold of tuneLastAnchor.holds) {
     const pts = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x, hold.y]);
     const dst = new cv.Mat();
-    cv.perspectiveTransform(pts, dst, H);
+    cv.perspectiveTransform(pts, dst, tuneLastH);
     const ptsR = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x + hold.r, hold.y]);
     const dstR = new cv.Mat();
-    cv.perspectiveTransform(ptsR, dstR, H);
+    cv.perspectiveTransform(ptsR, dstR, tuneLastH);
     const cx = dst.data32F[0], cy = dst.data32F[1];
     const r = Math.sqrt((dstR.data32F[0] - cx) ** 2 + (dstR.data32F[1] - cy) ** 2);
     holds.push({
@@ -2074,22 +2108,21 @@ function tuneAutoCapture(matchCount, H, matchedAnchor) {
   saveRoutes(routes);
 
   // Load new anchor features for tracking
-  const newIdx = routeData.extraAnchors.length; // 1-based (0 is primary)
+  const newIdx = routeData.extraAnchors.length;
   loadAnchorFeatures(dataUrl, holds, newIdx);
 
-  // Update HUD
-  const pct = getTunePercent();
-  document.getElementById('tune-pct').textContent = pct + '%';
-  document.getElementById('tune-status').textContent = 'CAPTURED! — ' +
-    (1 + routeData.extraAnchors.length) + ' ANGLES';
-  setTimeout(() => {
-    if (tuningMode) {
-      document.getElementById('tune-status').textContent =
-        pct >= 100 ? 'TUNING COMPLETE' : 'MOVE CAMERA SLOWLY AROUND THE WALL';
-    }
-  }, 1500);
+  // Advance to next step
+  tuneStepIdx++;
+  document.getElementById('tune-feedback').textContent =
+    'CAPTURED! — ' + (1 + routeData.extraAnchors.length) + ' ANGLES';
+  setTimeout(() => updateTuneHud(), 1200);
 
-  console.log(`Tune: captured angle ${newIdx + 1}, displacement=${disp.toFixed(3)}, matches=${matchCount}`);
+  // Cleanup stored H
+  tuneLastH.delete();
+  tuneLastH = null;
+  tuneLastAnchor = null;
+
+  console.log(`Tune: captured angle ${newIdx + 1}, matches=${tuneLastMatchCount}`);
 }
 
 // Handle resize
