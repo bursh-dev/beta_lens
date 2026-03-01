@@ -334,7 +334,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.4';
+const BUILD_VER = '260301.5';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -1219,7 +1219,7 @@ function initTracker() {
     const anchorGray = new cv.Mat();
     cv.cvtColor(anchorMat, anchorGray, cv.COLOR_RGBA2GRAY);
 
-    orb = new cv.ORB(2000);
+    orb = new cv.ORB(2000, 1.2, 12);
     anchorKp = new cv.KeyPointVector();
     anchorDesc = new cv.Mat();
     orb.detectAndCompute(anchorGray, new cv.Mat(), anchorKp, anchorDesc);
