@@ -1219,7 +1219,7 @@ function initTracker() {
     const anchorGray = new cv.Mat();
     cv.cvtColor(anchorMat, anchorGray, cv.COLOR_RGBA2GRAY);
 
-    detector = new cv.AKAZE();
+    detector = new cv.AKAZE_create();
     anchorKp = new cv.KeyPointVector();
     anchorDesc = new cv.Mat();
     detector.detectAndCompute(anchorGray, new cv.Mat(), anchorKp, anchorDesc);
