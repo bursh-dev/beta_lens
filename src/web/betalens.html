@@ -334,7 +334,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.8';
+const BUILD_VER = '260301.9';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -389,11 +389,10 @@ let isTwoFinger = false;
 let totalTouchMovement = 0;
 const TAP_THRESHOLD = 12;   // px of movement allowed for a tap
 
-// Long-press state
-let longPressTimer = null;
-let longPressTriggered = false;
+// Hold interaction state
 let editingHoldIdx = -1;    // index of hold being edited in popup
-const LONG_PRESS_MS = 400;
+let draggingHoldIdx = -1;   // index of hold being dragged
+let dragStartImgX = 0, dragStartImgY = 0;  // hold position at drag start
 
 // Live state
 let liveStream = null;
@@ -680,12 +679,10 @@ function onAnnoTouchStart(e) {
   e.preventDefault();
   if (editingHoldIdx >= 0) return; // popup open, ignore canvas touches
   totalTouchMovement = 0;
-  longPressTriggered = false;
-  clearTimeout(longPressTimer);
+  draggingHoldIdx = -1;
 
   if (e.touches.length === 2) {
     isTwoFinger = true;
-    clearTimeout(longPressTimer);
     pinchStartDist = getTouchDist(e.touches[0], e.touches[1]);
     pinchStartZoom = viewZoom;
     pinchStartPanX = viewPanX;
@@ -700,19 +697,16 @@ function onAnnoTouchStart(e) {
     panViewStartX = viewPanX;
     panViewStartY = viewPanY;
 
-    // Start long-press timer
-    const tx = e.touches[0].clientX;
-    const ty = e.touches[0].clientY;
-    longPressTimer = setTimeout(() => {
-      if (totalTouchMovement < TAP_THRESHOLD && !isTwoFinger && annoImg) {
-        const { x, y } = screenToImageCoords(tx, ty);
-        const idx = findNearestHold(x, y);
-        if (idx >= 0) {
-          longPressTriggered = true;
-          showHoldPopup(idx, tx, ty);
-        }
+    // Check if touching a hold (for drag)
+    if (annoImg) {
+      const { x, y } = screenToImageCoords(panStartX, panStartY);
+      const idx = findNearestHold(x, y);
+      if (idx >= 0) {
+        draggingHoldIdx = idx;
+        dragStartImgX = annoHolds[idx].x;
+        dragStartImgY = annoHolds[idx].y;
       }
-    }, LONG_PRESS_MS);
+    }
   }
 }
 
@@ -722,7 +716,7 @@ function onAnnoTouchMove(e) {
   if (e.touches.length === 2) {
     isTwoFinger = true;
     totalTouchMovement = 999;
-    clearTimeout(longPressTimer);
+    draggingHoldIdx = -1;
 
     const dist = getTouchDist(e.touches[0], e.touches[1]);
     const newZoom = Math.max(1, Math.min(10, pinchStartZoom * (dist / pinchStartDist)));
@@ -744,12 +738,14 @@ function onAnnoTouchMove(e) {
     const dy = e.touches[0].clientY - panStartY;
     totalTouchMovement += Math.abs(dx) + Math.abs(dy);
 
-    // Cancel long-press if finger moves
-    if (totalTouchMovement >= TAP_THRESHOLD) {
-      clearTimeout(longPressTimer);
-    }
-
-    if (viewZoom > 1.05 && totalTouchMovement > TAP_THRESHOLD) {
+    if (draggingHoldIdx >= 0 && totalTouchMovement > TAP_THRESHOLD) {
+      // Drag hold to new position
+      const s = baseScale * viewZoom;
+      annoHolds[draggingHoldIdx].x = Math.round(dragStartImgX + dx / s);
+      annoHolds[draggingHoldIdx].y = Math.round(dragStartImgY + dy / s);
+      drawAnnotation();
+    } else if (draggingHoldIdx < 0 && viewZoom > 1.05 && totalTouchMovement > TAP_THRESHOLD) {
+      // Pan viewport
       viewPanX = panViewStartX + dx;
       viewPanY = panViewStartY + dy;
       applyTransform();
@@ -759,21 +755,33 @@ function onAnnoTouchMove(e) {
 
 function onAnnoTouchEnd(e) {
   e.preventDefault();
-  clearTimeout(longPressTimer);
   if (editingHoldIdx >= 0) return;
 
-  // Single tap to place hold — only if not long-press, finger barely moved, not 2-finger
-  if (!longPressTriggered && !isTwoFinger && totalTouchMovement < TAP_THRESHOLD
+  if (!isTwoFinger && totalTouchMovement < TAP_THRESHOLD
       && e.changedTouches.length === 1 && annoImg) {
     const t = e.changedTouches[0];
     const { x, y } = screenToImageCoords(t.clientX, t.clientY);
-    if (x >= 0 && x < annoImg.width && y >= 0 && y < annoImg.height) {
-      addHold(x, y);
+
+    // Check mini edit button first
+    const btnIdx = hitEditButton(x, y);
+    if (btnIdx >= 0) {
+      showHoldPopup(btnIdx, t.clientX, t.clientY);
+    } else if (x >= 0 && x < annoImg.width && y >= 0 && y < annoImg.height) {
+      // Tap on empty space — place new hold
+      if (findNearestHold(x, y) < 0) {
+        addHold(x, y);
+      }
     }
   }
+
+  // Save undo state if a hold was dragged
+  if (draggingHoldIdx >= 0 && totalTouchMovement >= TAP_THRESHOLD) {
+    annoHistory.push(annoHolds.map(h => ({...h})));
+  }
+  draggingHoldIdx = -1;
+
   if (e.touches.length === 0) {
     isTwoFinger = false;
-    // Snap back to centered if zoom near 1x
     if (viewZoom < 1.05 && annoImg) {
       viewZoom = 1;
       const vp = document.getElementById('annotate-viewport');
@@ -855,6 +863,27 @@ function drawAnnotation() {
     annoCtx.fillRect(h.x - lw / 2 - 4, h.y + h.r + 4, lw + 8, fontSize + 4);
     annoCtx.fillStyle = `rgb(${r},${g},${b})`;
     annoCtx.fillText(label, h.x - lw / 2, h.y + h.r + fontSize + 2);
+
+    // Mini edit button (top-right of hold)
+    const btnR = Math.max(16, h.r * 0.35);
+    const btnX = h.x + h.r * 0.7;
+    const btnY = h.y - h.r * 0.7;
+    annoCtx.beginPath();
+    annoCtx.arc(btnX, btnY, btnR, 0, Math.PI * 2);
+    annoCtx.fillStyle = 'rgba(0,0,0,0.7)';
+    annoCtx.fill();
+    annoCtx.strokeStyle = `rgba(${r},${g},${b},0.9)`;
+    annoCtx.lineWidth = 2;
+    annoCtx.stroke();
+    // Gear icon (⚙)
+    const gearSize = Math.max(14, btnR * 1.1);
+    annoCtx.font = `${gearSize}px sans-serif`;
+    annoCtx.fillStyle = `rgb(${r},${g},${b})`;
+    annoCtx.textAlign = 'center';
+    annoCtx.textBaseline = 'middle';
+    annoCtx.fillText('\u2699', btnX, btnY + 1);
+    annoCtx.textAlign = 'start';
+    annoCtx.textBaseline = 'alphabetic';
   }
   updateAnnotateStatus();
   updateSaveButton();
@@ -871,6 +900,18 @@ function findNearestHold(x, y) {
     }
   }
   return bestIdx;
+}
+
+function hitEditButton(imgX, imgY) {
+  for (let i = 0; i < annoHolds.length; i++) {
+    const h = annoHolds[i];
+    const btnR = Math.max(16, h.r * 0.35);
+    const btnX = h.x + h.r * 0.7;
+    const btnY = h.y - h.r * 0.7;
+    const dist = Math.sqrt((imgX - btnX) ** 2 + (imgY - btnY) ** 2);
+    if (dist < btnR * 1.5) return i;
+  }
+  return -1;
 }
 
 function addHold(x, y) {
