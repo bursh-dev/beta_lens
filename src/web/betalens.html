@@ -351,7 +351,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.13';
+const BUILD_VER = '260301.14';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -692,36 +692,50 @@ async function shareRoute() {
 
   try {
     const url = await createShareUrl();
-    if (url.length > 60000) {
+    const urlLen = url.length;
+    console.log('Share URL length:', urlLen);
+
+    if (urlLen > 60000) {
       toast.textContent = 'ROUTE TOO LARGE TO SHARE AS LINK';
       setTimeout(() => { toast.style.display = 'none'; }, 2000);
       return;
     }
 
-    // Try native share first (mobile)
+    // Always copy to clipboard first
+    let copied = false;
+    if (navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(url);
+        copied = true;
+      } catch (e) { /* clipboard may fail without focus */ }
+    }
+
+    // Try native share sheet (mobile) — pass URL as text since long URLs
+    // can break the url parameter in some share targets
     if (navigator.share) {
       toast.style.display = 'none';
-      await navigator.share({
-        title: 'BetaLens: ' + (routeData.name || 'Route'),
-        text: 'Track this climbing route',
-        url: url
-      });
-    } else if (navigator.clipboard) {
-      await navigator.clipboard.writeText(url);
-      toast.textContent = 'LINK COPIED!';
-      setTimeout(() => { toast.style.display = 'none'; }, 1500);
+      try {
+        await navigator.share({
+          title: 'BetaLens: ' + (routeData.name || 'Route'),
+          text: url
+        });
+        return;
+      } catch (e) {
+        // Share cancelled or failed — fall through to clipboard toast
+      }
+    }
+
+    toast.textContent = copied ? 'LINK COPIED!' : 'LINK READY';
+    toast.style.display = 'block';
+    if (!copied) {
+      // Fallback: show URL in prompt for manual copy
+      setTimeout(() => { toast.style.display = 'none'; prompt('Copy this link:', url); }, 300);
     } else {
-      // Last resort: prompt with URL
-      toast.style.display = 'none';
-      prompt('Copy this link:', url);
+      setTimeout(() => { toast.style.display = 'none'; }, 1500);
     }
   } catch (err) {
-    if (err.name !== 'AbortError') {
-      toast.textContent = 'SHARE FAILED: ' + err.message;
-      setTimeout(() => { toast.style.display = 'none'; }, 2000);
-    } else {
-      toast.style.display = 'none';
-    }
+    toast.textContent = 'SHARE FAILED: ' + err.message;
+    setTimeout(() => { toast.style.display = 'none'; }, 2500);
   }
 }
 
