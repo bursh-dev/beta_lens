@@ -334,7 +334,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.5';
+const BUILD_VER = '260301.6';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -1291,7 +1291,7 @@ function trackingLoop() {
             }));
 
           const mask = new cv.Mat();
-          const H = cv.findHomography(srcPts, dstPts, cv.RANSAC, 3.0, mask);
+          const H = cv.findHomography(srcPts, dstPts, cv.RANSAC, 5.0, mask);
 
           if (H && H.rows === 3) {
             // Transform holds
