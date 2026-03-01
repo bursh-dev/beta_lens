@@ -332,7 +332,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.2';
+const BUILD_VER = '260301.3';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -412,11 +412,10 @@ let trackedCount = 0;
 let lastFps = 0;
 let fpsFrames = 0;
 let fpsTime = 0;
-// Temporal smoothing
-let smoothedHolds = null;   // last smoothed hold positions
-let trackLostFrames = 0;    // consecutive frames without tracking
-const SMOOTH_ALPHA = 0.4;   // EMA weight for new position (0=full smooth, 1=no smooth)
-const MAX_LOST_FRAMES = 8;  // hold last position for this many lost frames
+// Hold last position on brief tracking loss
+let smoothedHolds = null;
+let trackLostFrames = 0;
+const MAX_LOST_FRAMES = 5;
 
 // ===== OPENCV LOADING =====
 function onOpenCvReady() {
@@ -1216,7 +1215,7 @@ function initTracker() {
     const anchorGray = new cv.Mat();
     cv.cvtColor(anchorMat, anchorGray, cv.COLOR_RGBA2GRAY);
 
-    orb = new cv.ORB(3500);
+    orb = new cv.ORB(2000);
     anchorKp = new cv.KeyPointVector();
     anchorDesc = new cv.Mat();
     orb.detectAndCompute(anchorGray, new cv.Mat(), anchorKp, anchorDesc);
@@ -1326,23 +1325,13 @@ function trackingLoop() {
     }
   }
 
-  // Temporal smoothing
+  // Hold last position on brief tracking loss (no EMA lag)
   if (tracking && transformedHolds.length > 0) {
     trackLostFrames = 0;
-    if (smoothedHolds && smoothedHolds.length === transformedHolds.length) {
-      // EMA: blend new position with previous smoothed position
-      for (let i = 0; i < transformedHolds.length; i++) {
-        const s = smoothedHolds[i], t = transformedHolds[i];
-        t.x = s.x + SMOOTH_ALPHA * (t.x - s.x);
-        t.y = s.y + SMOOTH_ALPHA * (t.y - s.y);
-        t.r = s.r + SMOOTH_ALPHA * (t.r - s.r);
-      }
-    }
     smoothedHolds = transformedHolds.map(h => ({ ...h }));
   } else {
     trackLostFrames++;
     if (smoothedHolds && trackLostFrames <= MAX_LOST_FRAMES) {
-      // Show last known position during brief tracking loss
       transformedHolds = smoothedHolds;
       tracking = true;
     } else {
