@@ -334,7 +334,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.9';
+const BUILD_VER = '260301.10';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -762,15 +762,12 @@ function onAnnoTouchEnd(e) {
     const t = e.changedTouches[0];
     const { x, y } = screenToImageCoords(t.clientX, t.clientY);
 
-    // Check mini edit button first
-    const btnIdx = hitEditButton(x, y);
-    if (btnIdx >= 0) {
-      showHoldPopup(btnIdx, t.clientX, t.clientY);
+    // Tap on existing hold → popup, tap on empty space → new hold
+    const idx = findNearestHold(x, y);
+    if (idx >= 0) {
+      showHoldPopup(idx, t.clientX, t.clientY);
     } else if (x >= 0 && x < annoImg.width && y >= 0 && y < annoImg.height) {
-      // Tap on empty space — place new hold
-      if (findNearestHold(x, y) < 0) {
-        addHold(x, y);
-      }
+      addHold(x, y);
     }
   }
 
@@ -863,27 +860,6 @@ function drawAnnotation() {
     annoCtx.fillRect(h.x - lw / 2 - 4, h.y + h.r + 4, lw + 8, fontSize + 4);
     annoCtx.fillStyle = `rgb(${r},${g},${b})`;
     annoCtx.fillText(label, h.x - lw / 2, h.y + h.r + fontSize + 2);
-
-    // Mini edit button (top-right of hold)
-    const btnR = Math.max(16, h.r * 0.35);
-    const btnX = h.x + h.r * 0.7;
-    const btnY = h.y - h.r * 0.7;
-    annoCtx.beginPath();
-    annoCtx.arc(btnX, btnY, btnR, 0, Math.PI * 2);
-    annoCtx.fillStyle = 'rgba(0,0,0,0.7)';
-    annoCtx.fill();
-    annoCtx.strokeStyle = `rgba(${r},${g},${b},0.9)`;
-    annoCtx.lineWidth = 2;
-    annoCtx.stroke();
-    // Gear icon (⚙)
-    const gearSize = Math.max(14, btnR * 1.1);
-    annoCtx.font = `${gearSize}px sans-serif`;
-    annoCtx.fillStyle = `rgb(${r},${g},${b})`;
-    annoCtx.textAlign = 'center';
-    annoCtx.textBaseline = 'middle';
-    annoCtx.fillText('\u2699', btnX, btnY + 1);
-    annoCtx.textAlign = 'start';
-    annoCtx.textBaseline = 'alphabetic';
   }
   updateAnnotateStatus();
   updateSaveButton();
@@ -900,18 +876,6 @@ function findNearestHold(x, y) {
     }
   }
   return bestIdx;
-}
-
-function hitEditButton(imgX, imgY) {
-  for (let i = 0; i < annoHolds.length; i++) {
-    const h = annoHolds[i];
-    const btnR = Math.max(16, h.r * 0.35);
-    const btnX = h.x + h.r * 0.7;
-    const btnY = h.y - h.r * 0.7;
-    const dist = Math.sqrt((imgX - btnX) ** 2 + (imgY - btnY) ** 2);
-    if (dist < btnR * 1.5) return i;
-  }
-  return -1;
 }
 
 function addHold(x, y) {
