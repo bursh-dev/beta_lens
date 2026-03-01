@@ -334,7 +334,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.6';
+const BUILD_VER = '260301.7';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -365,7 +365,7 @@ let currentRouteIdx = -1;   // index in saved routes array, -1 = new route
 let anchorMat = null;
 let anchorKp = null;
 let anchorDesc = null;
-let orb = null;
+let detector = null;
 let bfMatcher = null;
 
 // Annotate state
@@ -1219,12 +1219,12 @@ function initTracker() {
     const anchorGray = new cv.Mat();
     cv.cvtColor(anchorMat, anchorGray, cv.COLOR_RGBA2GRAY);
 
-    orb = new cv.ORB(2000, 1.2, 12);
+    detector = new cv.AKAZE();
     anchorKp = new cv.KeyPointVector();
     anchorDesc = new cv.Mat();
-    orb.detectAndCompute(anchorGray, new cv.Mat(), anchorKp, anchorDesc);
+    detector.detectAndCompute(anchorGray, new cv.Mat(), anchorKp, anchorDesc);
 
-    bfMatcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
+    bfMatcher = new cv.BFMatcher(cv.NORM_L2, false);
 
     anchorGray.delete();
     console.log(`Anchor: ${anchorKp.size()} features`);
@@ -1256,7 +1256,7 @@ function trackingLoop() {
       // Detect features
       const frameKp = new cv.KeyPointVector();
       const frameDesc = new cv.Mat();
-      orb.detectAndCompute(frameGray, new cv.Mat(), frameKp, frameDesc);
+      detector.detectAndCompute(frameGray, new cv.Mat(), frameKp, frameDesc);
 
       if (frameDesc.rows >= 10) {
         // Match
