@@ -351,7 +351,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.14';
+const BUILD_VER = '260301.15';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -1624,6 +1624,52 @@ function tryMatchAnchor(anchor, frameKp, frameDesc) {
   return { anchorIdx: anchor.idx, anchor, goodMatches: good, goodCount: good.length };
 }
 
+function isConvexQuad(corners) {
+  // Check that 4 corners form a convex quadrilateral (no flipping/collapsing)
+  for (let i = 0; i < 4; i++) {
+    const a = corners[i], b = corners[(i + 1) % 4], c = corners[(i + 2) % 4];
+    const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+    if (cross <= 0) return false; // must all be positive (CCW winding)
+  }
+  return true;
+}
+
+function validateHomography(H, w, h) {
+  // Transform anchor corners and check the result is geometrically valid
+  const srcCorners = [[0, 0], [w, 0], [w, h], [0, h]];
+  const dstCorners = [];
+  for (const [cx, cy] of srcCorners) {
+    const pts = cv.matFromArray(1, 1, cv.CV_32FC2, [cx, cy]);
+    const dst = new cv.Mat();
+    cv.perspectiveTransform(pts, dst, H);
+    dstCorners.push([dst.data32F[0], dst.data32F[1]]);
+    pts.delete(); dst.delete();
+  }
+
+  // Check convexity (rejects flipped/collapsed transforms)
+  if (!isConvexQuad(dstCorners)) return false;
+
+  // Check area ratio — transformed quad area vs original
+  const origArea = w * h;
+  // Shoelace formula
+  let area = 0;
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    area += dstCorners[i][0] * dstCorners[j][1];
+    area -= dstCorners[j][0] * dstCorners[i][1];
+  }
+  area = Math.abs(area) / 2;
+  const areaRatio = area / origArea;
+  // Reject if area shrunk below 5% or expanded beyond 20x
+  if (areaRatio < 0.05 || areaRatio > 20) return false;
+
+  // Check determinant of top-left 2x2 (should be positive, not near zero)
+  const det = H.data64F[0] * H.data64F[4] - H.data64F[1] * H.data64F[3];
+  if (det < 0.1) return false;
+
+  return true;
+}
+
 function computeHomography(matchResult, frameKp) {
   const { anchor, goodMatches } = matchResult;
   if (goodMatches.length < 10) return null;
@@ -1641,20 +1687,31 @@ function computeHomography(matchResult, frameKp) {
   const H = cv.findHomography(srcPts, dstPts, cv.RANSAC, 5.0, mask);
   let result = null;
   if (H && H.rows === 3) {
-    const transformedHolds = [];
-    for (const hold of anchor.holds) {
-      const pts = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x, hold.y]);
-      const dst = new cv.Mat();
-      cv.perspectiveTransform(pts, dst, H);
-      const cx = dst.data32F[0], cy = dst.data32F[1];
-      const ptsR = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x + hold.r, hold.y]);
-      const dstR = new cv.Mat();
-      cv.perspectiveTransform(ptsR, dstR, H);
-      const r = Math.sqrt((dstR.data32F[0] - cx) ** 2 + (dstR.data32F[1] - cy) ** 2);
-      transformedHolds.push({ id: hold.id, x: cx, y: cy, r, kind: hold.kind });
-      pts.delete(); dst.delete(); ptsR.delete(); dstR.delete();
+    // Count RANSAC inliers
+    let inliers = 0;
+    for (let i = 0; i < mask.rows; i++) {
+      if (mask.data[i]) inliers++;
     }
-    result = { holds: transformedHolds, H };
+
+    // Validate homography geometry
+    if (inliers >= 8 && validateHomography(H, anchor.mat.cols, anchor.mat.rows)) {
+      const transformedHolds = [];
+      for (const hold of anchor.holds) {
+        const pts = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x, hold.y]);
+        const dst = new cv.Mat();
+        cv.perspectiveTransform(pts, dst, H);
+        const cx = dst.data32F[0], cy = dst.data32F[1];
+        const ptsR = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x + hold.r, hold.y]);
+        const dstR = new cv.Mat();
+        cv.perspectiveTransform(ptsR, dstR, H);
+        const r = Math.sqrt((dstR.data32F[0] - cx) ** 2 + (dstR.data32F[1] - cy) ** 2);
+        transformedHolds.push({ id: hold.id, x: cx, y: cy, r, kind: hold.kind });
+        pts.delete(); dst.delete(); ptsR.delete(); dstR.delete();
+      }
+      result = { holds: transformedHolds, H, inliers };
+    } else {
+      H.delete();
+    }
   }
   mask.delete(); srcPts.delete(); dstPts.delete();
   return result;
@@ -1690,32 +1747,41 @@ function trackingLoop() {
       if (frameDesc.rows >= 10) {
         // Try active anchor first
         let bestResult = tryMatchAnchor(anchorFeatures[activeAnchorIdx], frameKp, frameDesc);
+        let bestHr = bestResult.goodCount >= 10 ? computeHomography(bestResult, frameKp) : null;
 
-        // If not good enough, try other anchors
-        if (bestResult.goodCount < 20 && anchorFeatures.length > 1) {
+        // If not good enough (by inlier count), try other anchors
+        let bestInliers = bestHr ? bestHr.inliers : 0;
+        if (bestInliers < 20 && anchorFeatures.length > 1) {
           for (let i = 0; i < anchorFeatures.length; i++) {
             if (i === activeAnchorIdx) continue;
             if (!anchorFeatures[i] || !anchorFeatures[i].desc) continue;
             const result = tryMatchAnchor(anchorFeatures[i], frameKp, frameDesc);
-            if (result.goodCount > bestResult.goodCount) bestResult = result;
+            if (result.goodCount >= 10) {
+              const hr = computeHomography(result, frameKp);
+              if (hr && hr.inliers > bestInliers) {
+                if (bestHr && bestHr.H) bestHr.H.delete();
+                bestResult = result;
+                bestHr = hr;
+                bestInliers = hr.inliers;
+              } else if (hr && hr.H) {
+                hr.H.delete();
+              }
+            }
           }
         }
 
-        matchCount = bestResult.goodCount;
+        matchCount = bestHr ? bestHr.inliers : bestResult.goodCount;
 
-        if (bestResult.goodCount >= 10) {
-          const hr = computeHomography(bestResult, frameKp);
-          if (hr) {
-            transformedHolds = hr.holds;
-            tracking = true;
-            trackedCount++;
-            activeAnchorIdx = bestResult.anchorIdx;
-            // Auto-capture for tuning mode
-            if (tuningMode && hr.H) {
-              tuneAutoCapture(matchCount, hr.H, bestResult.anchor);
-            }
-            if (hr.H) hr.H.delete();
+        if (bestHr) {
+          transformedHolds = bestHr.holds;
+          tracking = true;
+          trackedCount++;
+          activeAnchorIdx = bestResult.anchorIdx;
+          // Auto-capture for tuning mode
+          if (tuningMode && bestHr.H) {
+            tuneAutoCapture(matchCount, bestHr.H, bestResult.anchor);
           }
+          if (bestHr.H) bestHr.H.delete();
         }
       }
       frameKp.delete(); frameDesc.delete(); frameGray.delete(); frameMat.delete();
