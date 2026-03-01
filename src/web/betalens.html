@@ -115,6 +115,8 @@
   .pbtn-done { color: #8cf; }
   .pbtn-done .pbtn-icon { color: #8cf; }
   .pbtn-done:active { background: #456; color: #fff; }
+  .pbtn-angle { color: #ff9100; }
+  .pbtn-angle .pbtn-icon { color: #ff9100; }
 
   /* Panel info */
   .panel-info {
@@ -307,6 +309,10 @@
     <button class="pbtn" onclick="annotateCapturePhoto()"><span class="pbtn-icon">O</span>CAM</button>
     <button class="pbtn" onclick="annotateUndo()"><span class="pbtn-icon">&larr;</span>UNDO</button>
     <button class="pbtn" onclick="annotateClear()"><span class="pbtn-icon">X</span>CLR</button>
+    <div class="panel-info" id="panel-angles-section" style="display:none">
+      <span class="val" id="panel-angles">1</span>ANGLES
+    </div>
+    <button class="pbtn pbtn-angle" id="btn-add-angle" onclick="startAddAngle()" style="display:none"><span class="pbtn-icon">&#8635;</span>ANGLE</button>
     <button class="pbtn" onclick="annotateResetZoom()"><span class="pbtn-icon">[ ]</span>1:1</button>
   </div>
   <input type="file" id="file-input" accept="image/*" style="display:none">
@@ -334,7 +340,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.10';
+const BUILD_VER = '260301.11';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -362,16 +368,18 @@ const GRADE_OPTIONS = ['?','V0','V1','V2','V3','V4','V5','V6','V7','V8','V9','V1
 let cvReady = false;
 let routeData = null;       // { anchor: { dataUrl, width, height }, holds: [...] }
 let currentRouteIdx = -1;   // index in saved routes array, -1 = new route
-let anchorMat = null;
-let anchorKp = null;
-let anchorDesc = null;
 let detector = null;
 let bfMatcher = null;
+let anchorFeatures = [];    // [{ mat, kp, desc, holds, idx }, ...]
+let activeAnchorIdx = 0;    // index of currently winning anchor
 
 // Annotate state
 let annoImg = null;         // HTMLImageElement
 let annoHolds = [];
 let annoHistory = [];
+let annoMode = 'primary';          // 'primary' | 'extra'
+let annoExtraAnchorIdx = -1;       // which extra anchor being edited
+let primaryHoldsSnapshot = null;   // primary holds for extra angle init
 let annoCanvas, annoCtx;
 let defaultRadius = 30;
 
@@ -501,7 +509,7 @@ function showMenu() {
       div.innerHTML =
         `<span class="ri-grade">${r.grade || '?'}</span>` +
         `<span class="ri-name">${r.name || 'Route ' + (i+1)}</span>` +
-        `<span class="ri-holds">${r.holds.length}h</span>` +
+        `<span class="ri-holds">${r.holds.length}h${r.extraAnchors && r.extraAnchors.length ? ' ' + (1 + r.extraAnchors.length) + 'a' : ''}</span>` +
         `<span class="ri-btns">` +
           `<button class="ri-btn" onclick="event.stopPropagation();startAnnotate(${i})">Edit</button>` +
           `<button class="ri-btn" onclick="event.stopPropagation();selectRoute(${i})">Track</button>` +
@@ -572,6 +580,9 @@ function startAnnotate(routeIdx) {
   annoHistory = [];
   annoImg = null;
   annoSavedSnapshot = '';
+  annoMode = 'primary';
+  annoExtraAnchorIdx = -1;
+  primaryHoldsSnapshot = null;
   viewZoom = 1; viewPanX = 0; viewPanY = 0;
 
   // Load existing route if editing
@@ -612,6 +623,7 @@ function startAnnotate(routeIdx) {
   // Mouse wheel zoom for desktop testing
   vp.addEventListener('wheel', onAnnoWheel, { passive: false });
   updateAnnotateStatus();
+  updateAddAngleButton();
 }
 
 function fitCanvas() {
@@ -879,6 +891,7 @@ function findNearestHold(x, y) {
 }
 
 function addHold(x, y) {
+  if (annoMode === 'extra') return;  // no new holds in extra angle mode
   annoHistory.push(annoHolds.map(h => ({...h})));
   const id = 'H' + (annoHolds.length + 1);
   const r = Math.round(Math.min(annoImg.width, annoImg.height) * 0.03);
@@ -940,6 +953,7 @@ function onPopupResize(val) {
 
 function popupDelete() {
   if (editingHoldIdx < 0) return;
+  if (annoMode === 'extra') return;  // can't delete in extra angle mode
   annoHolds.splice(editingHoldIdx, 1);
   renumberHolds();
   editingHoldIdx = -1;
@@ -1035,8 +1049,23 @@ function loadImageFile(file) {
     const img = new Image();
     img.onload = () => {
       annoImg = img;
-      annoHolds = [];
+      if (annoMode === 'extra' && primaryHoldsSnapshot) {
+        // Pre-populate holds scaled from primary image coords
+        const sx = img.width / routeData.anchor.width;
+        const sy = img.height / routeData.anchor.height;
+        annoHolds = primaryHoldsSnapshot.map(h => ({
+          ...h,
+          x: Math.round(h.x * sx),
+          y: Math.round(h.y * sy),
+          r: Math.round(h.r * Math.min(sx, sy))
+        }));
+        document.getElementById('annotate-status').textContent =
+          '// DRAG EACH HOLD TO MATCH THIS ANGLE';
+      } else {
+        annoHolds = [];
+      }
       annoHistory = [];
+      annoSavedSnapshot = '';
       fitCanvas();
       drawAnnotation();
     };
@@ -1068,7 +1097,6 @@ function annotateSave() {
   tmpCtx.drawImage(annoImg, 0, 0, sw, sh);
   const dataUrl = tmpCanvas.toDataURL('image/jpeg', 0.8);
 
-  // Scale hold coordinates
   const scaledHolds = annoHolds.map(h => ({
     ...h,
     x: Math.round(h.x * scale),
@@ -1076,38 +1104,82 @@ function annotateSave() {
     r: Math.round(h.r * scale)
   }));
 
-  routeData = {
-    anchor: { dataUrl, width: sw, height: sh },
-    holds: scaledHolds,
-    grade: currentGrade,
-    colorIdx: currentColorIdx,
-    name: routeData && routeData.name ? routeData.name : 'Route ' + (getRoutes().length + 1),
-    savedAt: new Date().toISOString()
-  };
-
-  // Save to routes array
-  const routes = getRoutes();
-  if (currentRouteIdx >= 0 && currentRouteIdx < routes.length) {
-    routeData.name = routes[currentRouteIdx].name || routeData.name;
-    routes[currentRouteIdx] = routeData;
-  } else {
-    routes.push(routeData);
-    currentRouteIdx = routes.length - 1;
-  }
-  saveRoutes(routes);
-  annoSavedSnapshot = JSON.stringify(annoHolds);
-  updateSaveButton();
-
-  // Show save toast
   const toast = document.getElementById('save-toast');
-  toast.textContent = `ROUTE SAVED — ${scaledHolds.length} HOLDS`;
-  toast.classList.remove('show');
-  void toast.offsetWidth;  // force reflow for re-trigger
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 1500);
 
-  document.getElementById('annotate-status').textContent =
-    `// SAVED: ${scaledHolds.length} holds (${sw}x${sh})`;
+  if (annoMode === 'extra') {
+    // Save as extra anchor
+    const routes = getRoutes();
+    const route = routes[currentRouteIdx];
+    if (!route.extraAnchors) route.extraAnchors = [];
+
+    const extraAnchor = {
+      dataUrl, width: sw, height: sh,
+      holds: scaledHolds,
+      addedAt: new Date().toISOString()
+    };
+
+    if (annoExtraAnchorIdx >= 0) {
+      route.extraAnchors[annoExtraAnchorIdx] = extraAnchor;
+    } else {
+      route.extraAnchors.push(extraAnchor);
+    }
+
+    routes[currentRouteIdx] = route;
+    routeData = route;
+    saveRoutes(routes);
+    annoSavedSnapshot = JSON.stringify(annoHolds);
+
+    const totalAngles = 1 + route.extraAnchors.length;
+    toast.textContent = `ANGLE SAVED — ${totalAngles} TOTAL`;
+    toast.classList.remove('show');
+    void toast.offsetWidth;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1500);
+
+    // Return to primary view
+    reloadPrimaryAnchor();
+  } else {
+    // Primary save
+    const prevExtraAnchors = routeData && routeData.extraAnchors;
+    routeData = {
+      anchor: { dataUrl, width: sw, height: sh },
+      holds: scaledHolds,
+      grade: currentGrade,
+      colorIdx: currentColorIdx,
+      name: routeData && routeData.name ? routeData.name : 'Route ' + (getRoutes().length + 1),
+      savedAt: new Date().toISOString()
+    };
+    // Preserve extra anchors if hold count unchanged
+    if (prevExtraAnchors && prevExtraAnchors.length > 0) {
+      if (scaledHolds.length === prevExtraAnchors[0].holds.length) {
+        routeData.extraAnchors = prevExtraAnchors;
+      } else {
+        alert('Hold count changed — extra angles removed. Re-add if needed.');
+      }
+    }
+
+    const routes = getRoutes();
+    if (currentRouteIdx >= 0 && currentRouteIdx < routes.length) {
+      routeData.name = routes[currentRouteIdx].name || routeData.name;
+      routes[currentRouteIdx] = routeData;
+    } else {
+      routes.push(routeData);
+      currentRouteIdx = routes.length - 1;
+    }
+    saveRoutes(routes);
+    annoSavedSnapshot = JSON.stringify(annoHolds);
+    updateSaveButton();
+    updateAddAngleButton();
+
+    toast.textContent = `ROUTE SAVED — ${scaledHolds.length} HOLDS`;
+    toast.classList.remove('show');
+    void toast.offsetWidth;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1500);
+
+    document.getElementById('annotate-status').textContent =
+      `// SAVED: ${scaledHolds.length} holds (${sw}x${sh})`;
+  }
 }
 
 function hasUnsavedChanges() {
@@ -1126,12 +1198,80 @@ function updateSaveButton() {
 }
 
 function annotateBack() {
+  if (annoMode === 'extra') {
+    if (hasUnsavedChanges()) {
+      if (!confirm('Discard this angle?')) return;
+    }
+    reloadPrimaryAnchor();
+    return;
+  }
   if (hasUnsavedChanges()) {
     if (confirm('You have unsaved holds. Save before leaving?')) {
       annotateSave();
     }
   }
   showMenu();
+}
+
+function startAddAngle() {
+  if (!routeData || !routeData.anchor || !routeData.holds || routeData.holds.length === 0) {
+    alert('Save the primary route first');
+    return;
+  }
+  primaryHoldsSnapshot = routeData.holds.map(h => ({...h}));
+  annoMode = 'extra';
+  annoExtraAnchorIdx = -1;
+  annoImg = null;
+  annoHolds = [];
+  annoHistory = [];
+  annoSavedSnapshot = '';
+
+  document.getElementById('btn-add-angle').style.display = 'none';
+  document.getElementById('annotate-status').textContent =
+    '// TAKE PHOTO FROM A DIFFERENT ANGLE';
+  if (annoCanvas && annoCtx) {
+    annoCtx.clearRect(0, 0, annoCanvas.width, annoCanvas.height);
+  }
+  updateSaveButton();
+}
+
+function reloadPrimaryAnchor() {
+  annoMode = 'primary';
+  annoExtraAnchorIdx = -1;
+  primaryHoldsSnapshot = null;
+
+  if (routeData && routeData.anchor && routeData.anchor.dataUrl) {
+    const img = new Image();
+    img.onload = () => {
+      annoImg = img;
+      annoHolds = routeData.holds.map(h => ({...h}));
+      annoSavedSnapshot = JSON.stringify(annoHolds);
+      fitCanvas();
+      drawAnnotation();
+      updateAddAngleButton();
+      updateSaveButton();
+    };
+    img.src = routeData.anchor.dataUrl;
+  }
+}
+
+function updateAddAngleButton() {
+  const btn = document.getElementById('btn-add-angle');
+  const show = annoMode === 'primary'
+    && currentRouteIdx >= 0
+    && routeData && routeData.anchor
+    && routeData.holds && routeData.holds.length > 0
+    && (!routeData.extraAnchors || routeData.extraAnchors.length < 4);
+  btn.style.display = show ? '' : 'none';
+
+  const section = document.getElementById('panel-angles-section');
+  if (routeData && routeData.extraAnchors && routeData.extraAnchors.length > 0) {
+    section.style.display = '';
+    document.getElementById('panel-angles').textContent =
+      1 + routeData.extraAnchors.length;
+  } else {
+    section.style.display = 'none';
+  }
 }
 
 // ===== LIVE TRACKING =====
@@ -1202,15 +1342,18 @@ function showLiveError(title, msg) {
   el.classList.add('show');
 }
 
-function initTracker() {
-  // Clean up previous
-  if (anchorMat) { anchorMat.delete(); anchorMat = null; }
-  if (anchorKp) { anchorKp.delete(); anchorKp = null; }
-  if (anchorDesc) { anchorDesc.delete(); anchorDesc = null; }
+function cleanupTracker() {
+  for (const af of anchorFeatures) {
+    if (af.mat) af.mat.delete();
+    if (af.kp) af.kp.delete();
+    if (af.desc) af.desc.delete();
+  }
+  anchorFeatures = [];
   if (detector) { detector.delete(); detector = null; }
   if (bfMatcher) { bfMatcher.delete(); bfMatcher = null; }
+}
 
-  // Load anchor image into OpenCV Mat
+function loadAnchorFeatures(dataUrl, holds, idx) {
   const img = new Image();
   img.onload = () => {
     const tmpCanvas = document.createElement('canvas');
@@ -1220,21 +1363,89 @@ function initTracker() {
     tmpCtx.drawImage(img, 0, 0);
     const imgData = tmpCtx.getImageData(0, 0, img.width, img.height);
 
-    anchorMat = cv.matFromImageData(imgData);
-    const anchorGray = new cv.Mat();
-    cv.cvtColor(anchorMat, anchorGray, cv.COLOR_RGBA2GRAY);
+    const mat = cv.matFromImageData(imgData);
+    const gray = new cv.Mat();
+    cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
 
-    detector = new cv.ORB(2000, 1.2, 12);
-    anchorKp = new cv.KeyPointVector();
-    anchorDesc = new cv.Mat();
-    detector.detectAndCompute(anchorGray, new cv.Mat(), anchorKp, anchorDesc);
+    const kp = new cv.KeyPointVector();
+    const desc = new cv.Mat();
+    detector.detectAndCompute(gray, new cv.Mat(), kp, desc);
 
-    bfMatcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
-
-    anchorGray.delete();
-    console.log(`Anchor: ${anchorKp.size()} features`);
+    anchorFeatures[idx] = { mat, kp, desc, holds, idx };
+    gray.delete();
+    console.log(`Anchor ${idx}: ${kp.size()} features, ${holds.length} holds`);
   };
-  img.src = routeData.anchor.dataUrl;
+  img.src = dataUrl;
+}
+
+function initTracker() {
+  cleanupTracker();
+  detector = new cv.ORB(2000, 1.2, 12);
+  bfMatcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
+  activeAnchorIdx = 0;
+
+  // Load primary anchor
+  loadAnchorFeatures(routeData.anchor.dataUrl, routeData.holds, 0);
+
+  // Load extra anchors
+  if (routeData.extraAnchors) {
+    routeData.extraAnchors.forEach((ea, i) => {
+      loadAnchorFeatures(ea.dataUrl, ea.holds, i + 1);
+    });
+  }
+}
+
+function tryMatchAnchor(anchor, frameKp, frameDesc) {
+  const matches = new cv.DMatchVectorVector();
+  bfMatcher.knnMatch(anchor.desc, frameDesc, matches, 2);
+  const good = [];
+  for (let i = 0; i < matches.size(); i++) {
+    const match = matches.get(i);
+    if (match.size() >= 2) {
+      const m = match.get(0);
+      const n = match.get(1);
+      if (m.distance < 0.80 * n.distance) good.push(m);
+    }
+  }
+  matches.delete();
+  return { anchorIdx: anchor.idx, anchor, goodMatches: good, goodCount: good.length };
+}
+
+function computeHomography(matchResult, frameKp) {
+  const { anchor, goodMatches } = matchResult;
+  if (goodMatches.length < 10) return null;
+  const srcPts = cv.matFromArray(goodMatches.length, 1, cv.CV_32FC2,
+    goodMatches.flatMap(m => {
+      const kp = anchor.kp.get(m.queryIdx);
+      return [kp.pt.x, kp.pt.y];
+    }));
+  const dstPts = cv.matFromArray(goodMatches.length, 1, cv.CV_32FC2,
+    goodMatches.flatMap(m => {
+      const kp = frameKp.get(m.trainIdx);
+      return [kp.pt.x, kp.pt.y];
+    }));
+  const mask = new cv.Mat();
+  const H = cv.findHomography(srcPts, dstPts, cv.RANSAC, 5.0, mask);
+  let result = null;
+  if (H && H.rows === 3) {
+    const transformedHolds = [];
+    for (const hold of anchor.holds) {
+      const pts = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x, hold.y]);
+      const dst = new cv.Mat();
+      cv.perspectiveTransform(pts, dst, H);
+      const cx = dst.data32F[0], cy = dst.data32F[1];
+      const ptsR = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x + hold.r, hold.y]);
+      const dstR = new cv.Mat();
+      cv.perspectiveTransform(ptsR, dstR, H);
+      const r = Math.sqrt((dstR.data32F[0] - cx) ** 2 + (dstR.data32F[1] - cy) ** 2);
+      transformedHolds.push({ id: hold.id, x: cx, y: cy, r, kind: hold.kind });
+      pts.delete(); dst.delete(); ptsR.delete(); dstR.delete();
+    }
+    result = { holds: transformedHolds };
+    H.delete();
+  }
+  mask.delete(); srcPts.delete(); dstPts.delete();
+  return result;
 }
 
 function trackingLoop() {
@@ -1250,83 +1461,45 @@ function trackingLoop() {
   let matchCount = 0;
   let transformedHolds = [];
 
-  if (anchorDesc && anchorDesc.rows > 0) {
+  const primaryReady = anchorFeatures.length > 0
+    && anchorFeatures[0] && anchorFeatures[0].desc && anchorFeatures[0].desc.rows > 0;
+
+  if (primaryReady) {
     try {
-      // Get current frame
       const imgData = liveCtx.getImageData(0, 0, liveCanvas.width, liveCanvas.height);
       const frameMat = cv.matFromImageData(imgData);
       const frameGray = new cv.Mat();
       cv.cvtColor(frameMat, frameGray, cv.COLOR_RGBA2GRAY);
 
-      // Detect features
       const frameKp = new cv.KeyPointVector();
       const frameDesc = new cv.Mat();
       detector.detectAndCompute(frameGray, new cv.Mat(), frameKp, frameDesc);
 
       if (frameDesc.rows >= 10) {
-        // Match
-        const matches = new cv.DMatchVectorVector();
-        bfMatcher.knnMatch(anchorDesc, frameDesc, matches, 2);
+        // Try active anchor first
+        let bestResult = tryMatchAnchor(anchorFeatures[activeAnchorIdx], frameKp, frameDesc);
 
-        // Ratio test
-        const good = [];
-        for (let i = 0; i < matches.size(); i++) {
-          const match = matches.get(i);
-          if (match.size() >= 2) {
-            const m = match.get(0);
-            const n = match.get(1);
-            if (m.distance < 0.80 * n.distance) {
-              good.push(m);
-            }
+        // If not good enough, try other anchors
+        if (bestResult.goodCount < 20 && anchorFeatures.length > 1) {
+          for (let i = 0; i < anchorFeatures.length; i++) {
+            if (i === activeAnchorIdx) continue;
+            if (!anchorFeatures[i] || !anchorFeatures[i].desc) continue;
+            const result = tryMatchAnchor(anchorFeatures[i], frameKp, frameDesc);
+            if (result.goodCount > bestResult.goodCount) bestResult = result;
           }
         }
-        matchCount = good.length;
 
-        if (good.length >= 10) {
-          // Build point arrays
-          const srcPts = cv.matFromArray(good.length, 1, cv.CV_32FC2,
-            good.flatMap(m => {
-              const kp = anchorKp.get(m.queryIdx);
-              return [kp.pt.x, kp.pt.y];
-            }));
-          const dstPts = cv.matFromArray(good.length, 1, cv.CV_32FC2,
-            good.flatMap(m => {
-              const kp = frameKp.get(m.trainIdx);
-              return [kp.pt.x, kp.pt.y];
-            }));
+        matchCount = bestResult.goodCount;
 
-          const mask = new cv.Mat();
-          const H = cv.findHomography(srcPts, dstPts, cv.RANSAC, 5.0, mask);
-
-          if (H && H.rows === 3) {
-            // Transform holds
-            const holds = routeData.holds;
-            for (const hold of holds) {
-              const pts = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x, hold.y]);
-              const dst = new cv.Mat();
-              cv.perspectiveTransform(pts, dst, H);
-              const cx = dst.data32F[0];
-              const cy = dst.data32F[1];
-
-              // Transform radius
-              const ptsR = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x + hold.r, hold.y]);
-              const dstR = new cv.Mat();
-              cv.perspectiveTransform(ptsR, dstR, H);
-              const rx = dstR.data32F[0];
-              const ry = dstR.data32F[1];
-              const r = Math.sqrt((rx - cx) ** 2 + (ry - cy) ** 2);
-
-              transformedHolds.push({ id: hold.id, x: cx, y: cy, r, kind: hold.kind });
-
-              pts.delete(); dst.delete(); ptsR.delete(); dstR.delete();
-            }
+        if (bestResult.goodCount >= 10) {
+          const hr = computeHomography(bestResult, frameKp);
+          if (hr) {
+            transformedHolds = hr.holds;
             tracking = true;
             trackedCount++;
-            H.delete();
+            activeAnchorIdx = bestResult.anchorIdx;
           }
-          mask.delete(); srcPts.delete(); dstPts.delete();
         }
-        matches.delete();
       }
       frameKp.delete(); frameDesc.delete(); frameGray.delete(); frameMat.delete();
     } catch (err) {
@@ -1334,7 +1507,7 @@ function trackingLoop() {
     }
   }
 
-  // Hold last position on brief tracking loss (no EMA lag)
+  // Hold last position on brief tracking loss
   if (tracking && transformedHolds.length > 0) {
     trackLostFrames = 0;
     smoothedHolds = transformedHolds.map(h => ({ ...h }));
@@ -1348,7 +1521,6 @@ function trackingLoop() {
     }
   }
 
-  // Draw overlay
   drawLiveOverlay(tracking, transformedHolds, matchCount);
 
   // FPS calculation
@@ -1371,16 +1543,16 @@ function trackingLoop() {
   }
 
   const trkPct = frameCount > 0 ? (trackedCount / frameCount * 100).toFixed(0) : 0;
+  const anchorLabel = anchorFeatures.length > 1 ? `  |  ANC: ${activeAnchorIdx + 1}/${anchorFeatures.length}` : '';
   document.getElementById('hud-telemetry').textContent =
     `FEAT MATCH: ${String(matchCount).padStart(3, '0')}  |  ` +
     `TRK: ${trkPct}%  |  ` +
     `FPS: ${lastFps.toFixed(1)}  |  ` +
-    `FRM: ${String(frameCount).padStart(5, '0')}`;
+    `FRM: ${String(frameCount).padStart(5, '0')}` + anchorLabel;
 
-  // Schedule next frame — skip frames if processing is slow
+  // Schedule next frame
   const elapsed = performance.now() - t0;
   if (elapsed > 100) {
-    // Processing is slow, skip next frame
     setTimeout(() => requestAnimationFrame(trackingLoop), 0);
   } else {
     requestAnimationFrame(trackingLoop);
@@ -1508,6 +1680,7 @@ function initLiveZoom() {
 
 function stopLive() {
   liveRunning = false;
+  cleanupTracker();
   if (liveStream) {
     liveStream.getTracks().forEach(t => t.stop());
     liveStream = null;
