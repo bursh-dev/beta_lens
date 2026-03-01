@@ -119,6 +119,8 @@
   .pbtn-angle .pbtn-icon { color: #ff9100; }
   .pbtn-tune { color: #00e5ff; }
   .pbtn-tune .pbtn-icon { color: #00e5ff; }
+  .pbtn-share { color: #76ff03; }
+  .pbtn-share .pbtn-icon { color: #76ff03; }
 
   /* Panel info */
   .panel-info {
@@ -316,6 +318,7 @@
     </div>
     <button class="pbtn pbtn-angle" id="btn-add-angle" onclick="startAddAngle()" style="display:none"><span class="pbtn-icon">&#8635;</span>ANGLE</button>
     <button class="pbtn pbtn-tune" id="btn-tune" onclick="startTuning()" style="display:none"><span class="pbtn-icon">&#9678;</span>TUNE</button>
+    <button class="pbtn pbtn-share" id="btn-share" onclick="shareRoute()" style="display:none"><span class="pbtn-icon">&#10148;</span>SHARE</button>
     <button class="pbtn" onclick="annotateResetZoom()"><span class="pbtn-icon">[ ]</span>1:1</button>
   </div>
   <input type="file" id="file-input" accept="image/*" style="display:none">
@@ -324,6 +327,7 @@
 
 <!-- Save Toast -->
 <div id="save-toast">ROUTE SAVED</div>
+<div id="share-toast" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.9);border:2px solid #76ff03;color:#76ff03;font-family:'Courier New',monospace;padding:24px 40px;font-size:18px;letter-spacing:2px;z-index:100;display:none;text-align:center;max-width:80vw;"></div>
 
 <!-- Live Tracking Screen -->
 <div id="live" class="screen">
@@ -347,7 +351,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.12';
+const BUILD_VER = '260301.13';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -435,6 +439,9 @@ const TUNE_MIN_MATCHES = 30;      // min good matches to auto-capture
 const TUNE_MIN_DISPLACEMENT = 0.15; // min corner displacement as fraction of diagonal
 const TUNE_CAPTURE_INTERVAL = 2000; // ms between captures
 const TUNE_MAX_ANCHORS = 8;        // max total anchors
+// Share state
+let pendingShareTrack = false;
+
 // Hold last position on brief tracking loss
 let smoothedHolds = null;
 let trackLostFrames = 0;
@@ -451,8 +458,21 @@ function onOpenCvReady() {
   if (hv) hv.textContent = 'v' + BUILD_VER;
   const mv = document.getElementById('menu-ver');
   if (mv) mv.textContent = 'v' + BUILD_VER;
-  showMenu();
+  if (pendingShareTrack) {
+    pendingShareTrack = false;
+    startLive();
+  } else {
+    showMenu();
+  }
 }
+
+// Check for shared route URL before OpenCV loads
+checkShareUrl().then(shared => {
+  if (shared) {
+    const lp = document.getElementById('load-progress');
+    if (lp) lp.textContent = 'loading shared route...';
+  }
+});
 
 // Load OpenCV.js
 (function loadOpenCV() {
@@ -583,6 +603,163 @@ function importRoutes(input) {
   };
   reader.readAsText(file);
   input.value = '';
+}
+
+// ===== SHARE VIA URL =====
+function base64urlEncode(uint8) {
+  let bin = '';
+  for (let i = 0; i < uint8.length; i++) bin += String.fromCharCode(uint8[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function base64urlDecode(str) {
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (str.length % 4) str += '=';
+  const bin = atob(str);
+  const uint8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) uint8[i] = bin.charCodeAt(i);
+  return uint8;
+}
+
+async function compressPayload(jsonStr) {
+  const bytes = new TextEncoder().encode(jsonStr);
+  if (typeof CompressionStream !== 'undefined') {
+    const cs = new CompressionStream('deflate');
+    const writer = cs.writable.getWriter();
+    writer.write(bytes);
+    writer.close();
+    const compressed = await new Response(cs.readable).arrayBuffer();
+    return base64urlEncode(new Uint8Array(compressed));
+  }
+  // Fallback: no compression
+  return 'R' + base64urlEncode(bytes); // 'R' prefix = raw/uncompressed
+}
+
+async function decompressPayload(encoded) {
+  if (encoded.startsWith('R')) {
+    // Raw/uncompressed fallback
+    return new TextDecoder().decode(base64urlDecode(encoded.slice(1)));
+  }
+  const bytes = base64urlDecode(encoded);
+  if (typeof DecompressionStream !== 'undefined') {
+    const ds = new DecompressionStream('deflate');
+    const writer = ds.writable.getWriter();
+    writer.write(bytes);
+    writer.close();
+    const decompressed = await new Response(ds.readable).arrayBuffer();
+    return new TextDecoder().decode(decompressed);
+  }
+  throw new Error('DecompressionStream not supported');
+}
+
+async function createShareUrl() {
+  // Downscale anchor image to 640px, quality 0.5
+  const img = new Image();
+  await new Promise((resolve, reject) => {
+    img.onload = resolve; img.onerror = reject;
+    img.src = routeData.anchor.dataUrl;
+  });
+  const maxDim = 640;
+  let w = img.width, h = img.height;
+  const scale = Math.min(maxDim / w, maxDim / h, 1);
+  w = Math.round(w * scale); h = Math.round(h * scale);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(img, 0, 0, w, h);
+  const dataUrl = c.toDataURL('image/jpeg', 0.5);
+
+  // Build compact payload
+  const payload = {
+    a: { d: dataUrl, w, h },
+    h: routeData.holds.map(hold => ({
+      i: hold.id, x: Math.round(hold.x * scale), y: Math.round(hold.y * scale),
+      r: Math.round(hold.r * scale), k: hold.kind
+    })),
+    g: routeData.grade, c: routeData.colorIdx, n: routeData.name
+  };
+
+  const encoded = await compressPayload(JSON.stringify(payload));
+  const base = location.origin + location.pathname;
+  return base + '#s=' + encoded;
+}
+
+async function shareRoute() {
+  if (!routeData || !routeData.holds || routeData.holds.length === 0) {
+    alert('Save a route with holds first'); return;
+  }
+  const toast = document.getElementById('share-toast');
+  toast.textContent = 'GENERATING LINK...';
+  toast.style.display = 'block';
+
+  try {
+    const url = await createShareUrl();
+    if (url.length > 60000) {
+      toast.textContent = 'ROUTE TOO LARGE TO SHARE AS LINK';
+      setTimeout(() => { toast.style.display = 'none'; }, 2000);
+      return;
+    }
+
+    // Try native share first (mobile)
+    if (navigator.share) {
+      toast.style.display = 'none';
+      await navigator.share({
+        title: 'BetaLens: ' + (routeData.name || 'Route'),
+        text: 'Track this climbing route',
+        url: url
+      });
+    } else if (navigator.clipboard) {
+      await navigator.clipboard.writeText(url);
+      toast.textContent = 'LINK COPIED!';
+      setTimeout(() => { toast.style.display = 'none'; }, 1500);
+    } else {
+      // Last resort: prompt with URL
+      toast.style.display = 'none';
+      prompt('Copy this link:', url);
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      toast.textContent = 'SHARE FAILED: ' + err.message;
+      setTimeout(() => { toast.style.display = 'none'; }, 2000);
+    } else {
+      toast.style.display = 'none';
+    }
+  }
+}
+
+async function checkShareUrl() {
+  const hash = location.hash;
+  if (!hash.startsWith('#s=')) return false;
+  const encoded = hash.slice(3);
+  if (!encoded) return false;
+
+  try {
+    const jsonStr = await decompressPayload(encoded);
+    const p = JSON.parse(jsonStr);
+
+    // Reconstruct full routeData
+    const shared = {
+      anchor: { dataUrl: p.a.d, width: p.a.w, height: p.a.h },
+      holds: p.h.map(h => ({ id: h.i, x: h.x, y: h.y, r: h.r, kind: h.k })),
+      grade: p.g || '?',
+      colorIdx: p.c || 0,
+      name: (p.n || 'Shared Route') + ' (shared)',
+      savedAt: new Date().toISOString()
+    };
+
+    // Save to library
+    const routes = getRoutes();
+    routes.push(shared);
+    saveRoutes(routes);
+    currentRouteIdx = routes.length - 1;
+    routeData = shared;
+
+    // Clean URL
+    history.replaceState(null, '', location.pathname);
+    pendingShareTrack = true;
+    return true;
+  } catch (err) {
+    console.warn('Failed to load shared route:', err);
+    return false;
+  }
 }
 
 // ===== ANNOTATE =====
@@ -1280,6 +1457,7 @@ function updateAddAngleButton() {
     hasRoute && totalAnchors < TUNE_MAX_ANCHORS ? '' : 'none';
   document.getElementById('btn-tune').style.display =
     hasRoute && cvReady && totalAnchors < TUNE_MAX_ANCHORS ? '' : 'none';
+  document.getElementById('btn-share').style.display = hasRoute ? '' : 'none';
 
   const section = document.getElementById('panel-angles-section');
   if (routeData && routeData.extraAnchors && routeData.extraAnchors.length > 0) {
