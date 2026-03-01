@@ -357,7 +357,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.18';
+const BUILD_VER = '260301.19';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -2041,6 +2041,7 @@ function startTuning() {
   tuneLastH = null;
   tuneLastAnchor = null;
   tuneLastMatchCount = 0;
+  tuneGoodFrames = 0;
   // Skip steps already captured
   const existing = routeData.extraAnchors ? routeData.extraAnchors.length : 0;
   tuneStepIdx = Math.min(existing, TUNE_STEPS.length);
@@ -2077,13 +2078,39 @@ function tuneSkipStep() {
   updateTuneHud();
 }
 
+let tuneGoodFrames = 0;       // consecutive good-quality frames
+const TUNE_MIN_INLIERS = 15;  // min inliers to consider a frame "good"
+const TUNE_READY_FRAMES = 3;  // consecutive good frames before ready
+
 function tuneStoreFrame(matchCount, H, matchedAnchor) {
-  // Called from tracking loop — store latest valid H for manual capture
-  if (!tuningMode || !H) return;
-  if (tuneLastH) { try { tuneLastH.delete(); } catch(e) {} }
-  tuneLastH = H.clone();
-  tuneLastAnchor = matchedAnchor;
-  tuneLastMatchCount = matchCount;
+  // Called from tracking loop — only store high-quality frames
+  if (!tuningMode || !H) { tuneGoodFrames = 0; tuneUpdateReady(false); return; }
+  if (matchCount < TUNE_MIN_INLIERS) { tuneGoodFrames = 0; tuneUpdateReady(false); return; }
+
+  tuneGoodFrames++;
+  if (tuneGoodFrames >= TUNE_READY_FRAMES) {
+    if (tuneLastH) { try { tuneLastH.delete(); } catch(e) {} }
+    tuneLastH = H.clone();
+    tuneLastAnchor = matchedAnchor;
+    tuneLastMatchCount = matchCount;
+    tuneUpdateReady(true);
+  } else {
+    tuneUpdateReady(false);
+  }
+}
+
+function tuneUpdateReady(ready) {
+  const btn = document.getElementById('tune-capture-btn');
+  if (!btn || btn.style.display === 'none') return;
+  if (ready) {
+    btn.style.background = '#00e5ff';
+    btn.style.opacity = '1';
+    btn.textContent = 'CAPTURE';
+  } else {
+    btn.style.background = '#555';
+    btn.style.opacity = '0.5';
+    btn.textContent = 'HOLD STEADY...';
+  }
 }
 
 function tuneCaptureNow() {
@@ -2147,10 +2174,11 @@ function tuneCaptureNow() {
     'CAPTURED! — ' + (1 + routeData.extraAnchors.length) + ' ANGLES';
   setTimeout(() => updateTuneHud(), 1200);
 
-  // Cleanup stored H
+  // Cleanup stored H and reset ready state
   tuneLastH.delete();
   tuneLastH = null;
   tuneLastAnchor = null;
+  tuneGoodFrames = 0;
 
   console.log(`Tune: captured angle ${newIdx + 1}, matches=${tuneLastMatchCount}`);
 }
