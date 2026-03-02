@@ -357,7 +357,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260301.21';
+const BUILD_VER = '260301.22';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -445,18 +445,13 @@ let tuneLastH = null;             // last valid H for capture
 let tuneLastAnchor = null;        // last matched anchor for capture
 let tuneLastMatchCount = 0;
 const TUNE_MAX_ANCHORS = 12;       // max total anchors
+const TUNE_AUTO_INTERVAL = 3000;   // ms between auto-captures
+const TUNE_AUTO_MIN_DISP = 0.12;   // min corner displacement for auto-capture
+let lastAutoCapture = 0;
 const TUNE_STEPS = [
-  { icon: '⬅', text: '2 STEPS LEFT' },
-  { icon: '➡', text: '2 STEPS RIGHT' },
-  { icon: '🔍', text: 'MOVE CLOSER' },
-  { icon: '🔭', text: 'STEP BACK' },
-  { icon: '↙', text: 'ANGLE FROM LEFT' },
-  { icon: '↗', text: 'ANGLE FROM RIGHT' },
-  { icon: '⬆', text: 'LOOK UP SLIGHTLY' },
-  { icon: '⬇', text: 'LOOK DOWN SLIGHTLY' },
-  { icon: '↖', text: 'LEFT + CLOSER' },
-  { icon: '↘', text: 'RIGHT + CLOSER' },
-  { icon: '↕', text: 'LEFT + FURTHER' },
+  { icon: '⬅', text: '1-2 STEPS LEFT' },
+  { icon: '➡', text: '1-2 STEPS RIGHT' },
+  { icon: '⬇', text: 'BELOW — LOOK UP' },
 ];
 // Share state
 let pendingShareTrack = false;
@@ -2022,6 +2017,7 @@ function startTuning() {
   tuneLastAnchor = null;
   tuneLastMatchCount = 0;
   tuneGoodFrames = 0;
+  lastAutoCapture = 0;
   // Skip steps already captured
   const existing = routeData.extraAnchors ? routeData.extraAnchors.length : 0;
   tuneStepIdx = Math.min(existing, TUNE_STEPS.length);
@@ -2038,9 +2034,14 @@ function updateTuneHud() {
   const pct = getTunePercent();
   document.getElementById('tune-pct').textContent = pct + '%';
   const totalAnchors = 1 + (routeData && routeData.extraAnchors ? routeData.extraAnchors.length : 0);
-  if (tuneStepIdx >= TUNE_STEPS.length || totalAnchors >= TUNE_MAX_ANCHORS) {
+  if (totalAnchors >= TUNE_MAX_ANCHORS) {
     document.getElementById('tune-step-icon').textContent = '';
     document.getElementById('tune-status').textContent = 'TUNING COMPLETE';
+    document.getElementById('tune-capture-btn').style.display = 'none';
+    document.getElementById('tune-skip-btn').style.display = 'none';
+  } else if (tuneStepIdx >= TUNE_STEPS.length) {
+    document.getElementById('tune-step-icon').textContent = '🔄';
+    document.getElementById('tune-status').textContent = 'AUTO-TUNING — MOVE AROUND';
     document.getElementById('tune-capture-btn').style.display = 'none';
     document.getElementById('tune-skip-btn').style.display = 'none';
   } else {
@@ -2062,6 +2063,20 @@ let tuneGoodFrames = 0;       // consecutive good-quality frames
 const TUNE_MIN_INLIERS = 15;  // min inliers to consider a frame "good"
 const TUNE_READY_FRAMES = 3;  // consecutive good frames before ready
 
+function computeCornerDisplacement(H, w, h) {
+  const corners = [[0, 0], [w, 0], [w, h], [0, h]];
+  let totalDisp = 0;
+  for (const [cx, cy] of corners) {
+    const pts = cv.matFromArray(1, 1, cv.CV_32FC2, [cx, cy]);
+    const dst = new cv.Mat();
+    cv.perspectiveTransform(pts, dst, H);
+    const dx = dst.data32F[0] - cx, dy = dst.data32F[1] - cy;
+    totalDisp += Math.sqrt(dx * dx + dy * dy);
+    pts.delete(); dst.delete();
+  }
+  return (totalDisp / 4) / Math.sqrt(w * w + h * h);
+}
+
 function tuneStoreFrame(matchCount, H, matchedAnchor) {
   // Called from tracking loop — only store high-quality frames
   if (!tuningMode || !H) { tuneGoodFrames = 0; tuneUpdateReady(false); return; }
@@ -2074,6 +2089,17 @@ function tuneStoreFrame(matchCount, H, matchedAnchor) {
     tuneLastAnchor = matchedAnchor;
     tuneLastMatchCount = matchCount;
     tuneUpdateReady(true);
+
+    // Auto-capture between guided steps if viewpoint is different enough
+    const totalAnchors = 1 + (routeData.extraAnchors ? routeData.extraAnchors.length : 0);
+    const now = performance.now();
+    if (totalAnchors < TUNE_MAX_ANCHORS && now - lastAutoCapture > TUNE_AUTO_INTERVAL) {
+      const disp = computeCornerDisplacement(H, matchedAnchor.mat.cols, matchedAnchor.mat.rows);
+      if (disp >= TUNE_AUTO_MIN_DISP) {
+        lastAutoCapture = now;
+        doTuneCapture(false); // false = don't advance guided step
+      }
+    }
   } else {
     tuneUpdateReady(false);
   }
@@ -2094,13 +2120,17 @@ function tuneUpdateReady(ready) {
 }
 
 function tuneCaptureNow() {
-  const totalAnchors = 1 + (routeData.extraAnchors ? routeData.extraAnchors.length : 0);
-  if (totalAnchors >= TUNE_MAX_ANCHORS) return;
-
   if (!tuneLastH || !tuneLastAnchor) {
     document.getElementById('tune-feedback').textContent = 'NO LOCK — AIM AT THE WALL';
     return;
   }
+  doTuneCapture(true); // advance guided step
+}
+
+function doTuneCapture(advanceStep) {
+  const totalAnchors = 1 + (routeData.extraAnchors ? routeData.extraAnchors.length : 0);
+  if (totalAnchors >= TUNE_MAX_ANCHORS) return;
+  if (!tuneLastH || !tuneLastAnchor) return;
 
   // Downscale frame to max 1024px
   const maxDim = 1024;
@@ -2148,11 +2178,18 @@ function tuneCaptureNow() {
   const newIdx = routeData.extraAnchors.length;
   loadAnchorFeatures(dataUrl, holds, newIdx);
 
-  // Advance to next step
-  tuneStepIdx++;
-  document.getElementById('tune-feedback').textContent =
-    'CAPTURED! — ' + (1 + routeData.extraAnchors.length) + ' ANGLES';
-  setTimeout(() => updateTuneHud(), 1200);
+  const totalNow = 1 + routeData.extraAnchors.length;
+  if (advanceStep) {
+    tuneStepIdx++;
+    document.getElementById('tune-feedback').textContent =
+      'CAPTURED! — ' + totalNow + ' ANGLES';
+    setTimeout(() => updateTuneHud(), 1200);
+  } else {
+    // Auto-capture feedback (brief)
+    document.getElementById('tune-feedback').textContent =
+      'AUTO — ' + totalNow + ' ANGLES';
+    document.getElementById('tune-pct').textContent = getTunePercent() + '%';
+  }
 
   // Cleanup stored H and reset ready state
   tuneLastH.delete();
@@ -2160,7 +2197,7 @@ function tuneCaptureNow() {
   tuneLastAnchor = null;
   tuneGoodFrames = 0;
 
-  console.log(`Tune: captured angle ${newIdx + 1}, matches=${tuneLastMatchCount}`);
+  console.log(`Tune: captured angle ${newIdx + 1}, auto=${!advanceStep}`);
 }
 
 // Handle resize
