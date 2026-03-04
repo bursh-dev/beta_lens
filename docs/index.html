@@ -343,21 +343,15 @@
     <div class="telemetry" id="hud-telemetry"></div>
     <div class="telemetry" id="hud-ver"></div>
     <div id="tune-hud" style="display:none">
-      <div id="tune-pct" style="font-size:36px;font-weight:bold;text-align:center;color:#00e5ff;text-shadow:0 0 20px #00e5ff,0 0 40px #006080;margin:4px 0;"></div>
-      <div id="tune-step-icon" style="font-size:48px;text-align:center;margin:4px 0;"></div>
-      <div id="tune-status" style="font-size:14px;text-align:center;color:#fff;letter-spacing:2px;font-weight:bold;margin:4px 0;"></div>
-      <div style="text-align:center;margin:8px 0;">
-        <button id="tune-capture-btn" onclick="tuneCaptureNow()" style="background:#00e5ff;color:#000;border:none;padding:14px 36px;font-size:18px;font-weight:bold;font-family:'Courier New',monospace;letter-spacing:2px;border-radius:8px;text-shadow:none;">CAPTURE</button>
-        <button id="tune-skip-btn" onclick="tuneSkipStep()" style="background:transparent;color:#aaa;border:1px solid #555;padding:10px 20px;font-size:12px;font-family:'Courier New',monospace;letter-spacing:1px;border-radius:6px;margin-left:8px;">SKIP</button>
-      </div>
-      <div id="tune-feedback" style="font-size:12px;text-align:center;color:#76ff03;letter-spacing:1px;min-height:16px;"></div>
+      <div id="tune-pct" style="font-size:48px;font-weight:bold;text-align:center;color:#00e5ff;text-shadow:0 0 20px #00e5ff,0 0 40px #006080;margin:8px 0;"></div>
+      <div id="tune-status" style="font-size:12px;text-align:center;color:#aaa;letter-spacing:2px;"></div>
     </div>
   </div>
   <div id="live-error"></div>
 </div>
 
 <script>
-const BUILD_VER = '260301.22';
+const BUILD_VER = '260304.1';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -440,19 +434,11 @@ let fpsFrames = 0;
 let fpsTime = 0;
 // Tuning mode
 let tuningMode = false;
-let tuneStepIdx = 0;
-let tuneLastH = null;             // last valid H for capture
-let tuneLastAnchor = null;        // last matched anchor for capture
-let tuneLastMatchCount = 0;
+let lastCaptureTime = 0;
+const TUNE_MIN_MATCHES = 30;      // min good matches to auto-capture
+const TUNE_MIN_DISPLACEMENT = 0.15; // min corner displacement as fraction of diagonal
+const TUNE_CAPTURE_INTERVAL = 2000; // ms between captures
 const TUNE_MAX_ANCHORS = 12;       // max total anchors
-const TUNE_AUTO_INTERVAL = 3000;   // ms between auto-captures
-const TUNE_AUTO_MIN_DISP = 0.12;   // min corner displacement for auto-capture
-let lastAutoCapture = 0;
-const TUNE_STEPS = [
-  { icon: '⬅', text: '1-2 STEPS LEFT' },
-  { icon: '➡', text: '1-2 STEPS RIGHT' },
-  { icon: '⬇', text: 'BELOW — LOOK UP' },
-];
 // Share state
 let pendingShareTrack = false;
 
@@ -1638,6 +1624,16 @@ function tryMatchAnchor(anchor, frameKp, frameDesc) {
   return { anchorIdx: anchor.idx, anchor, goodMatches: good, goodCount: good.length };
 }
 
+function isConvexQuad(corners) {
+  // Check that 4 corners form a convex quadrilateral (no flipping/collapsing)
+  for (let i = 0; i < 4; i++) {
+    const a = corners[i], b = corners[(i + 1) % 4], c = corners[(i + 2) % 4];
+    const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+    if (cross <= 0) return false; // must all be positive (CCW winding)
+  }
+  return true;
+}
+
 function validateHomography(H, w, h) {
   // Transform anchor corners and check the result is geometrically valid
   const srcCorners = [[0, 0], [w, 0], [w, h], [0, h]];
@@ -1650,16 +1646,12 @@ function validateHomography(H, w, h) {
     pts.delete(); dst.delete();
   }
 
-  // Check convexity — all cross products must have same sign (CW or CCW)
-  let pos = 0, neg = 0;
-  for (let i = 0; i < 4; i++) {
-    const a = dstCorners[i], b = dstCorners[(i + 1) % 4], c = dstCorners[(i + 2) % 4];
-    const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
-    if (cross > 0) pos++; else if (cross < 0) neg++;
-  }
-  if (pos !== 4 && neg !== 4) return false;
+  // Check convexity (rejects flipped/collapsed transforms)
+  if (!isConvexQuad(dstCorners)) return false;
 
-  // Check area ratio — transformed quad area vs original (Shoelace)
+  // Check area ratio — transformed quad area vs original
+  const origArea = w * h;
+  // Shoelace formula
   let area = 0;
   for (let i = 0; i < 4; i++) {
     const j = (i + 1) % 4;
@@ -1667,12 +1659,13 @@ function validateHomography(H, w, h) {
     area -= dstCorners[j][0] * dstCorners[i][1];
   }
   area = Math.abs(area) / 2;
-  const areaRatio = area / (w * h);
-  if (areaRatio < 0.02 || areaRatio > 50) return false;
+  const areaRatio = area / origArea;
+  // Reject if area shrunk below 5% or expanded beyond 20x
+  if (areaRatio < 0.05 || areaRatio > 20) return false;
 
-  // Check determinant — reject degenerate transforms
+  // Check determinant of top-left 2x2 (should be positive, not near zero)
   const det = H.data64F[0] * H.data64F[4] - H.data64F[1] * H.data64F[3];
-  if (Math.abs(det) < 0.05) return false;
+  if (det < 0.1) return false;
 
   return true;
 }
@@ -1757,17 +1750,15 @@ function trackingLoop() {
         let bestHr = bestResult.goodCount >= 10 ? computeHomography(bestResult, frameKp) : null;
 
         // If not good enough (by inlier count), try other anchors
-        // Anchor hysteresis: require 30% more inliers to switch anchors
         let bestInliers = bestHr ? bestHr.inliers : 0;
         if (bestInliers < 20 && anchorFeatures.length > 1) {
-          const switchThreshold = Math.round(bestInliers * 1.3);
           for (let i = 0; i < anchorFeatures.length; i++) {
             if (i === activeAnchorIdx) continue;
             if (!anchorFeatures[i] || !anchorFeatures[i].desc) continue;
             const result = tryMatchAnchor(anchorFeatures[i], frameKp, frameDesc);
             if (result.goodCount >= 10) {
               const hr = computeHomography(result, frameKp);
-              if (hr && hr.inliers > Math.max(bestInliers, switchThreshold)) {
+              if (hr && hr.inliers > bestInliers) {
                 if (bestHr && bestHr.H) bestHr.H.delete();
                 bestResult = result;
                 bestHr = hr;
@@ -1782,28 +1773,13 @@ function trackingLoop() {
         matchCount = bestHr ? bestHr.inliers : bestResult.goodCount;
 
         if (bestHr) {
-          let rawHolds = bestHr.holds;
-
-          // Per-hold jump rejection: if a hold moved too far from last frame, keep old position
-          if (smoothedHolds && smoothedHolds.length === rawHolds.length) {
-            const maxJump = 60; // max px per frame
-            transformedHolds = rawHolds.map((h, i) => {
-              const prev = smoothedHolds[i];
-              const dx = h.x - prev.x, dy = h.y - prev.y;
-              const dist = Math.sqrt(dx * dx + dy * dy);
-              if (dist > maxJump) return prev; // reject jump, keep old position
-              return h;
-            });
-          } else {
-            transformedHolds = rawHolds;
-          }
-
+          transformedHolds = bestHr.holds;
           tracking = true;
           trackedCount++;
           activeAnchorIdx = bestResult.anchorIdx;
-          // Store frame for manual tuning capture
+          // Auto-capture for tuning mode
           if (tuningMode && bestHr.H) {
-            tuneStoreFrame(matchCount, bestHr.H, bestResult.anchor);
+            tuneAutoCapture(matchCount, bestHr.H, bestResult.anchor);
           }
           if (bestHr.H) bestHr.H.delete();
         }
@@ -1989,8 +1965,6 @@ function stopLive() {
   liveRunning = false;
   const wasTuning = tuningMode;
   tuningMode = false;
-  if (tuneLastH) { try { tuneLastH.delete(); } catch(e) {} tuneLastH = null; }
-  tuneLastAnchor = null;
   cleanupTracker();
   if (liveStream) {
     liveStream.getTracks().forEach(t => t.stop());
@@ -2012,58 +1986,22 @@ function startTuning() {
   if (!routeData) { alert('Save a route first'); return; }
   if (!cvReady) { alert('OpenCV not ready'); return; }
   tuningMode = true;
-  tuneStepIdx = 0;
-  tuneLastH = null;
-  tuneLastAnchor = null;
-  tuneLastMatchCount = 0;
-  tuneGoodFrames = 0;
-  lastAutoCapture = 0;
-  // Skip steps already captured
-  const existing = routeData.extraAnchors ? routeData.extraAnchors.length : 0;
-  tuneStepIdx = Math.min(existing, TUNE_STEPS.length);
+  lastCaptureTime = 0;
   startLive();
+  // Show tuning HUD after live starts
   setTimeout(() => {
     const th = document.getElementById('tune-hud');
-    if (th) th.style.display = '';
-    updateTuneHud();
+    if (th) {
+      th.style.display = '';
+      document.getElementById('tune-pct').textContent = getTunePercent() + '%';
+      document.getElementById('tune-status').textContent = 'MOVE CAMERA SLOWLY AROUND THE WALL';
+    }
     document.getElementById('live-back').textContent = 'Done';
   }, 100);
 }
 
-function updateTuneHud() {
-  const pct = getTunePercent();
-  document.getElementById('tune-pct').textContent = pct + '%';
-  const totalAnchors = 1 + (routeData && routeData.extraAnchors ? routeData.extraAnchors.length : 0);
-  if (totalAnchors >= TUNE_MAX_ANCHORS) {
-    document.getElementById('tune-step-icon').textContent = '';
-    document.getElementById('tune-status').textContent = 'TUNING COMPLETE';
-    document.getElementById('tune-capture-btn').style.display = 'none';
-    document.getElementById('tune-skip-btn').style.display = 'none';
-  } else if (tuneStepIdx >= TUNE_STEPS.length) {
-    document.getElementById('tune-step-icon').textContent = '🔄';
-    document.getElementById('tune-status').textContent = 'AUTO-TUNING — MOVE AROUND';
-    document.getElementById('tune-capture-btn').style.display = 'none';
-    document.getElementById('tune-skip-btn').style.display = 'none';
-  } else {
-    const step = TUNE_STEPS[tuneStepIdx];
-    document.getElementById('tune-step-icon').textContent = step.icon;
-    document.getElementById('tune-status').textContent = step.text;
-    document.getElementById('tune-capture-btn').style.display = '';
-    document.getElementById('tune-skip-btn').style.display = '';
-  }
-  document.getElementById('tune-feedback').textContent = '';
-}
-
-function tuneSkipStep() {
-  tuneStepIdx++;
-  updateTuneHud();
-}
-
-let tuneGoodFrames = 0;       // consecutive good-quality frames
-const TUNE_MIN_INLIERS = 15;  // min inliers to consider a frame "good"
-const TUNE_READY_FRAMES = 3;  // consecutive good frames before ready
-
 function computeCornerDisplacement(H, w, h) {
+  // Measure how much the anchor corners move under the homography
   const corners = [[0, 0], [w, 0], [w, h], [0, h]];
   let totalDisp = 0;
   for (const [cx, cy] of corners) {
@@ -2074,63 +2012,24 @@ function computeCornerDisplacement(H, w, h) {
     totalDisp += Math.sqrt(dx * dx + dy * dy);
     pts.delete(); dst.delete();
   }
-  return (totalDisp / 4) / Math.sqrt(w * w + h * h);
+  const diagonal = Math.sqrt(w * w + h * h);
+  return (totalDisp / 4) / diagonal; // normalized average displacement
 }
 
-function tuneStoreFrame(matchCount, H, matchedAnchor) {
-  // Called from tracking loop — only store high-quality frames
-  if (!tuningMode || !H) { tuneGoodFrames = 0; tuneUpdateReady(false); return; }
-  if (matchCount < TUNE_MIN_INLIERS) { tuneGoodFrames = 0; tuneUpdateReady(false); return; }
-
-  tuneGoodFrames++;
-  if (tuneGoodFrames >= TUNE_READY_FRAMES) {
-    if (tuneLastH) { try { tuneLastH.delete(); } catch(e) {} }
-    tuneLastH = H.clone();
-    tuneLastAnchor = matchedAnchor;
-    tuneLastMatchCount = matchCount;
-    tuneUpdateReady(true);
-
-    // Auto-capture between guided steps if viewpoint is different enough
-    const totalAnchors = 1 + (routeData.extraAnchors ? routeData.extraAnchors.length : 0);
-    const now = performance.now();
-    if (totalAnchors < TUNE_MAX_ANCHORS && now - lastAutoCapture > TUNE_AUTO_INTERVAL) {
-      const disp = computeCornerDisplacement(H, matchedAnchor.mat.cols, matchedAnchor.mat.rows);
-      if (disp >= TUNE_AUTO_MIN_DISP) {
-        lastAutoCapture = now;
-        doTuneCapture(false); // false = don't advance guided step
-      }
-    }
-  } else {
-    tuneUpdateReady(false);
-  }
-}
-
-function tuneUpdateReady(ready) {
-  const btn = document.getElementById('tune-capture-btn');
-  if (!btn || btn.style.display === 'none') return;
-  if (ready) {
-    btn.style.background = '#00e5ff';
-    btn.style.opacity = '1';
-    btn.textContent = 'CAPTURE';
-  } else {
-    btn.style.background = '#555';
-    btn.style.opacity = '0.5';
-    btn.textContent = 'HOLD STEADY...';
-  }
-}
-
-function tuneCaptureNow() {
-  if (!tuneLastH || !tuneLastAnchor) {
-    document.getElementById('tune-feedback').textContent = 'NO LOCK — AIM AT THE WALL';
-    return;
-  }
-  doTuneCapture(true); // advance guided step
-}
-
-function doTuneCapture(advanceStep) {
+function tuneAutoCapture(matchCount, H, matchedAnchor) {
+  if (!tuningMode || !H || matchCount < TUNE_MIN_MATCHES) return;
   const totalAnchors = 1 + (routeData.extraAnchors ? routeData.extraAnchors.length : 0);
   if (totalAnchors >= TUNE_MAX_ANCHORS) return;
-  if (!tuneLastH || !tuneLastAnchor) return;
+
+  const now = performance.now();
+  if (now - lastCaptureTime < TUNE_CAPTURE_INTERVAL) return;
+
+  // Check viewpoint is different enough
+  const disp = computeCornerDisplacement(H, matchedAnchor.mat.cols, matchedAnchor.mat.rows);
+  if (disp < TUNE_MIN_DISPLACEMENT) return;
+
+  // Auto-capture current frame as new anchor
+  lastCaptureTime = now;
 
   // Downscale frame to max 1024px
   const maxDim = 1024;
@@ -2147,13 +2046,13 @@ function doTuneCapture(advanceStep) {
 
   // Transform holds from matched anchor to frame coordinates, then scale
   const holds = [];
-  for (const hold of tuneLastAnchor.holds) {
+  for (const hold of matchedAnchor.holds) {
     const pts = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x, hold.y]);
     const dst = new cv.Mat();
-    cv.perspectiveTransform(pts, dst, tuneLastH);
+    cv.perspectiveTransform(pts, dst, H);
     const ptsR = cv.matFromArray(1, 1, cv.CV_32FC2, [hold.x + hold.r, hold.y]);
     const dstR = new cv.Mat();
-    cv.perspectiveTransform(ptsR, dstR, tuneLastH);
+    cv.perspectiveTransform(ptsR, dstR, H);
     const cx = dst.data32F[0], cy = dst.data32F[1];
     const r = Math.sqrt((dstR.data32F[0] - cx) ** 2 + (dstR.data32F[1] - cy) ** 2);
     holds.push({
@@ -2175,29 +2074,22 @@ function doTuneCapture(advanceStep) {
   saveRoutes(routes);
 
   // Load new anchor features for tracking
-  const newIdx = routeData.extraAnchors.length;
+  const newIdx = routeData.extraAnchors.length; // 1-based (0 is primary)
   loadAnchorFeatures(dataUrl, holds, newIdx);
 
-  const totalNow = 1 + routeData.extraAnchors.length;
-  if (advanceStep) {
-    tuneStepIdx++;
-    document.getElementById('tune-feedback').textContent =
-      'CAPTURED! — ' + totalNow + ' ANGLES';
-    setTimeout(() => updateTuneHud(), 1200);
-  } else {
-    // Auto-capture feedback (brief)
-    document.getElementById('tune-feedback').textContent =
-      'AUTO — ' + totalNow + ' ANGLES';
-    document.getElementById('tune-pct').textContent = getTunePercent() + '%';
-  }
+  // Update HUD
+  const pct = getTunePercent();
+  document.getElementById('tune-pct').textContent = pct + '%';
+  document.getElementById('tune-status').textContent = 'CAPTURED! — ' +
+    (1 + routeData.extraAnchors.length) + ' ANGLES';
+  setTimeout(() => {
+    if (tuningMode) {
+      document.getElementById('tune-status').textContent =
+        pct >= 100 ? 'TUNING COMPLETE' : 'MOVE CAMERA SLOWLY AROUND THE WALL';
+    }
+  }, 1500);
 
-  // Cleanup stored H and reset ready state
-  tuneLastH.delete();
-  tuneLastH = null;
-  tuneLastAnchor = null;
-  tuneGoodFrames = 0;
-
-  console.log(`Tune: captured angle ${newIdx + 1}, auto=${!advanceStep}`);
+  console.log(`Tune: captured angle ${newIdx + 1}, displacement=${disp.toFixed(3)}, matches=${matchCount}`);
 }
 
 // Handle resize
