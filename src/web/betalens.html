@@ -378,7 +378,7 @@
 </div>
 
 <script>
-const BUILD_VER = '30';
+const BUILD_VER = '31';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -554,6 +554,51 @@ function migrateOldRoute() {
   }
 }
 
+function renderThumbCanvas(route, size, callback) {
+  const src = route.anchor && route.anchor.dataUrl;
+  if (!src) { callback(null); return; }
+  const img = new Image();
+  img.onload = function() {
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const ctx = c.getContext('2d');
+    // Draw image covering the square (center crop)
+    const s = Math.min(img.width, img.height);
+    const sx = (img.width - s) / 2, sy = (img.height - s) / 2;
+    ctx.drawImage(img, sx, sy, s, s, 0, 0, size, size);
+    // Draw hold markers
+    const scale = size / s;
+    const rc = ROUTE_COLORS[route.colorIdx || 0];
+    const [cr, cg, cb] = rc.rgb;
+    for (const h of route.holds) {
+      const hx = (h.x - sx) * scale, hy = (h.y - sy) * scale, hr = h.r * scale;
+      // Fill
+      ctx.beginPath();
+      ctx.arc(hx, hy, hr, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},0.45)`;
+      ctx.fill();
+      // Border
+      ctx.beginPath();
+      ctx.arc(hx, hy, hr, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(${cr},${cg},${cb},0.8)`;
+      ctx.lineWidth = Math.max(1, hr * 0.1);
+      ctx.stroke();
+      // Label
+      const fs = Math.max(8, hr * 0.5);
+      ctx.font = `bold ${fs}px Courier New`;
+      const label = h.kind.toUpperCase();
+      const lw = ctx.measureText(label).width;
+      ctx.fillStyle = `rgba(0,0,0,0.6)`;
+      ctx.fillRect(hx - lw / 2 - 2, hy + hr + 1, lw + 4, fs + 2);
+      ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
+      ctx.fillText(label, hx - lw / 2, hy + hr + fs);
+    }
+    callback(c.toDataURL('image/jpeg', 0.8));
+  };
+  img.onerror = function() { callback(null); };
+  img.src = src;
+}
+
 function showMenu() {
   showScreen('menu');
   migrateOldRoute();
@@ -567,11 +612,9 @@ function showMenu() {
     routes.forEach((r, i) => {
       const div = document.createElement('div');
       div.className = 'route-item';
-      const thumbSrc = r.anchor && r.anchor.dataUrl ? r.anchor.dataUrl : '';
-      const thumbEl = thumbSrc
-        ? `<img class="ri-thumb" src="${thumbSrc}" alt="" onclick="event.stopPropagation();document.getElementById('thumb-overlay-img').src=this.src;document.getElementById('thumb-overlay').classList.add('active')">`
-        : `<div class="ri-thumb" style="display:flex;align-items:center;justify-content:center;font-size:10px;color:#666;">N/A</div>`;
-      div.innerHTML = thumbEl +
+      const thumbId = 'ri-thumb-' + i;
+      div.innerHTML =
+        `<div class="ri-thumb" id="${thumbId}" style="display:flex;align-items:center;justify-content:center;font-size:10px;color:#666;">...</div>` +
         `<div class="ri-info">` +
           `<div class="ri-top">` +
             `<span class="ri-grade">${r.grade || '?'}</span>` +
@@ -585,6 +628,27 @@ function showMenu() {
           `</div>` +
         `</div>`;
       list.appendChild(div);
+      // Render annotated thumbnail async
+      renderThumbCanvas(r, 128, function(dataUrl) {
+        const el = document.getElementById(thumbId);
+        if (!el) return;
+        if (dataUrl) {
+          const img = document.createElement('img');
+          img.className = 'ri-thumb';
+          img.src = dataUrl;
+          img.onclick = function(e) {
+            e.stopPropagation();
+            // Render larger preview with markers
+            renderThumbCanvas(r, 512, function(bigUrl) {
+              document.getElementById('thumb-overlay-img').src = bigUrl || dataUrl;
+              document.getElementById('thumb-overlay').classList.add('active');
+            });
+          };
+          el.replaceWith(img);
+        } else {
+          el.textContent = 'N/A';
+        }
+      });
     });
   }
 }
