@@ -31,8 +31,21 @@
   }
   .route-item:active { background: rgba(255,255,255,0.15); }
   .route-item .ri-thumb {
-    width: 44px; height: 44px; border-radius: 4px; object-fit: cover;
-    border: 1px solid #555; flex-shrink: 0; background: #222;
+    width: 64px; height: 64px; border-radius: 4px; object-fit: cover;
+    border: 1px solid #555; flex-shrink: 0; background: #222; cursor: pointer;
+  }
+  #thumb-overlay {
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.85); z-index: 9999;
+    justify-content: center; align-items: center;
+  }
+  #thumb-overlay.active { display: flex; }
+  #thumb-overlay img {
+    max-width: 90vw; max-height: 85vh; border-radius: 8px; border: 2px solid #555;
+  }
+  #thumb-overlay .to-close {
+    position: absolute; top: 16px; right: 20px; color: #aaa; font-size: 28px;
+    font-family: 'Courier New', monospace; cursor: pointer;
   }
   .route-item .ri-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .route-item .ri-top { display: flex; align-items: center; gap: 6px; }
@@ -261,6 +274,12 @@
 </head>
 <body>
 
+<!-- Thumbnail Preview Overlay -->
+<div id="thumb-overlay" onclick="this.classList.remove('active')">
+  <span class="to-close">X</span>
+  <img id="thumb-overlay-img" src="" alt="">
+</div>
+
 <!-- Loading Screen -->
 <div id="loading">
   <div>// INITIALIZING OPENCV</div>
@@ -359,7 +378,7 @@
 </div>
 
 <script>
-const BUILD_VER = '29';
+const BUILD_VER = '30';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -550,7 +569,7 @@ function showMenu() {
       div.className = 'route-item';
       const thumbSrc = r.anchor && r.anchor.dataUrl ? r.anchor.dataUrl : '';
       const thumbEl = thumbSrc
-        ? `<img class="ri-thumb" src="${thumbSrc}" alt="">`
+        ? `<img class="ri-thumb" src="${thumbSrc}" alt="" onclick="event.stopPropagation();document.getElementById('thumb-overlay-img').src=this.src;document.getElementById('thumb-overlay').classList.add('active')">`
         : `<div class="ri-thumb" style="display:flex;align-items:center;justify-content:center;font-size:10px;color:#666;">N/A</div>`;
       div.innerHTML = thumbEl +
         `<div class="ri-info">` +
