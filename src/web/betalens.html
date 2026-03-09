@@ -455,7 +455,7 @@
 </div>
 
 <script>
-const BUILD_VER = '38';
+const BUILD_VER = '39';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -916,12 +916,41 @@ function importRoutes(input) {
 }
 
 // ===== SESSION / ARCHIVE =====
-function endSession() {
+function compressRouteForArchive(route) {
+  return new Promise(resolve => {
+    const r = JSON.parse(JSON.stringify(route));
+    // Remove extra anchors from archive (only need primary for thumbnail)
+    delete r.extraAnchors;
+    if (!r.anchor || !r.anchor.dataUrl) { resolve(r); return; }
+    // Downscale anchor to 256px, low quality for archive thumbnail
+    const img = new Image();
+    img.onload = () => {
+      const maxDim = 256;
+      const scale = Math.min(maxDim / img.width, maxDim / img.height, 1);
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      r.anchor = { dataUrl: c.toDataURL('image/jpeg', 0.4), width: w, height: h };
+      // Scale hold coords to match
+      r.holds = r.holds.map(hold => ({
+        ...hold,
+        x: Math.round(hold.x * scale), y: Math.round(hold.y * scale),
+        r: Math.round(hold.r * scale)
+      }));
+      resolve(r);
+    };
+    img.onerror = () => resolve(r);
+    img.src = r.anchor.dataUrl;
+  });
+}
+
+async function endSession() {
   const routes = getRoutes();
   if (routes.length === 0) { alert('No routes in current session'); return; }
   if (!confirm('End session? ' + routes.length + ' route(s) will be archived.')) return;
 
-  // Auto-download backup
+  // Auto-download full backup
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10);
   const blob = new Blob([JSON.stringify(routes)], { type: 'application/json' });
@@ -932,10 +961,13 @@ function endSession() {
   a.click();
   URL.revokeObjectURL(url);
 
+  // Compress routes for archive (small thumbnails)
+  const compressed = await Promise.all(routes.map(r => compressRouteForArchive(r)));
+
   // Archive
   const archive = getArchive();
   const label = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  archive.push({ date: dateStr, label: label, routes: routes });
+  archive.push({ date: dateStr, label: label, routes: compressed });
   if (!saveArchive(archive)) return; // don't clear if save failed
 
   // Clear active
@@ -1012,7 +1044,7 @@ function restoreFromArchive(sessionIdx, routeIdx) {
   const routes = getRoutes();
   routes.push(route);
   saveRoutes(routes);
-  alert('Route copied to active session');
+  alert('Route copied to active session (low-res thumbnail — re-import from backup for full quality)');
 }
 
 function deleteSession(sessionIdx) {
