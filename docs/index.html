@@ -20,14 +20,22 @@
   #menu { justify-content: center; align-items: center; gap: 20px; }
   #menu h1 { font-size: 28px; letter-spacing: 4px; text-transform: uppercase; }
   #menu .subtitle { font-size: 12px; color: #cc2222; margin-bottom: 20px; }
-  #route-list { width: 280px; max-height: 40vh; overflow-y: auto; }
+  #route-list { width: 300px; max-height: 55vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #555 transparent; }
+  #route-list::-webkit-scrollbar { width: 4px; }
+  #route-list::-webkit-scrollbar-thumb { background: #555; border-radius: 2px; }
   .route-item {
     display: flex; align-items: center; gap: 8px;
-    padding: 10px 12px; margin: 4px 0;
+    padding: 8px 10px; margin: 4px 0;
     border: 1px solid #444; background: rgba(255,255,255,0.05); cursor: pointer;
     font-family: 'Courier New', monospace; font-size: 12px; color: #ccc;
   }
   .route-item:active { background: rgba(255,255,255,0.15); }
+  .route-item .ri-thumb {
+    width: 44px; height: 44px; border-radius: 4px; object-fit: cover;
+    border: 1px solid #555; flex-shrink: 0; background: #222;
+  }
+  .route-item .ri-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .route-item .ri-top { display: flex; align-items: center; gap: 6px; }
   .route-item .ri-grade { color: #ff8844; font-weight: bold; min-width: 28px; }
   .route-item .ri-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .route-item .ri-holds { color: #888; font-size: 10px; }
@@ -351,7 +359,7 @@
 </div>
 
 <script>
-const BUILD_VER = '260304.1';
+const BUILD_VER = '29';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -540,15 +548,23 @@ function showMenu() {
     routes.forEach((r, i) => {
       const div = document.createElement('div');
       div.className = 'route-item';
-      div.innerHTML =
-        `<span class="ri-grade">${r.grade || '?'}</span>` +
-        `<span class="ri-name">${r.name || 'Route ' + (i+1)}</span>` +
-        `<span class="ri-holds">${r.holds.length}h${r.extraAnchors && r.extraAnchors.length ? ' ' + (1 + r.extraAnchors.length) + 'a' : ''}</span>` +
-        `<span class="ri-btns">` +
-          `<button class="ri-btn" onclick="event.stopPropagation();startAnnotate(${i})">Edit</button>` +
-          `<button class="ri-btn" onclick="event.stopPropagation();selectRoute(${i})">Track</button>` +
-          `<button class="ri-btn ri-del" onclick="event.stopPropagation();deleteRoute(${i})">X</button>` +
-        `</span>`;
+      const thumbSrc = r.anchor && r.anchor.dataUrl ? r.anchor.dataUrl : '';
+      const thumbEl = thumbSrc
+        ? `<img class="ri-thumb" src="${thumbSrc}" alt="">`
+        : `<div class="ri-thumb" style="display:flex;align-items:center;justify-content:center;font-size:10px;color:#666;">N/A</div>`;
+      div.innerHTML = thumbEl +
+        `<div class="ri-info">` +
+          `<div class="ri-top">` +
+            `<span class="ri-grade">${r.grade || '?'}</span>` +
+            `<span class="ri-name">${r.name || 'Route ' + (i+1)}</span>` +
+            `<span class="ri-holds">${r.holds.length}h${r.extraAnchors && r.extraAnchors.length ? ' ' + (1 + r.extraAnchors.length) + 'a' : ''}</span>` +
+          `</div>` +
+          `<div class="ri-btns">` +
+            `<button class="ri-btn" onclick="event.stopPropagation();startAnnotate(${i})">Edit</button>` +
+            `<button class="ri-btn" onclick="event.stopPropagation();selectRoute(${i})">Track</button>` +
+            `<button class="ri-btn ri-del" onclick="event.stopPropagation();deleteRoute(${i})">X</button>` +
+          `</div>` +
+        `</div>`;
       list.appendChild(div);
     });
   }
