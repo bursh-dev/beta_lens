@@ -58,6 +58,14 @@
   .route-item .ri-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .route-item .ri-holds { color: #888; font-size: 10px; }
   .route-item .ri-btns { display: flex; gap: 4px; }
+  .route-item .ri-arrows { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+  .route-item .ri-arr {
+    background: transparent; border: 1px solid #444; color: #888;
+    font-size: 12px; width: 22px; height: 18px; cursor: pointer; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .route-item .ri-arr:active { background: #555; color: #fff; }
+  .route-item .ri-arr:disabled { opacity: 0.2; }
   .route-item .ri-btn {
     background: transparent; border: 1px solid #555; color: #999;
     font-family: 'Courier New', monospace; font-size: 10px; padding: 4px 6px; cursor: pointer;
@@ -384,7 +392,7 @@
 </div>
 
 <script>
-const BUILD_VER = '33';
+const BUILD_VER = '34';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -742,6 +750,10 @@ function showMenu() {
             `<button class="ri-btn" onclick="event.stopPropagation();selectRoute(${i})">Track</button>` +
             `<button class="ri-btn ri-del" onclick="event.stopPropagation();deleteRoute(${i})">X</button>` +
           `</div>` +
+        `</div>` +
+        `<div class="ri-arrows">` +
+          `<button class="ri-arr" onclick="event.stopPropagation();moveRoute(${i},-1)"${i === 0 ? ' disabled' : ''}>&#9650;</button>` +
+          `<button class="ri-arr" onclick="event.stopPropagation();moveRoute(${i},1)"${i === routes.length - 1 ? ' disabled' : ''}>&#9660;</button>` +
         `</div>`;
       list.appendChild(div);
       // Render annotated thumbnail async
@@ -772,6 +784,15 @@ function selectRoute(idx) {
   routeData = routes[idx];
   currentRouteIdx = idx;
   startLive();
+}
+
+function moveRoute(idx, dir) {
+  const routes = getRoutes();
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= routes.length) return;
+  [routes[idx], routes[newIdx]] = [routes[newIdx], routes[idx]];
+  saveRoutes(routes);
+  showMenu();
 }
 
 function deleteRoute(idx) {
