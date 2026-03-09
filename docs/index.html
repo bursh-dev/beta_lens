@@ -285,6 +285,43 @@
     pointer-events: none;
   }
 
+  /* --- Archive Screen --- */
+  #archive { justify-content: flex-start; align-items: center; padding: 20px; overflow-y: auto; }
+  #archive h2 { font-size: 22px; letter-spacing: 3px; margin-bottom: 12px; }
+  #archive-list { width: 320px; max-width: 95vw; }
+  .as-session { margin-bottom: 8px; }
+  .as-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; background: rgba(255,255,255,0.05); border: 1px solid #444;
+    cursor: pointer; font-family: 'Courier New', monospace; font-size: 13px; color: #ccc;
+  }
+  .as-header:active { background: rgba(255,255,255,0.12); }
+  .as-header .as-date { color: #ff8844; font-weight: bold; }
+  .as-header .as-count { color: #888; font-size: 11px; }
+  .as-header .as-chevron { color: #666; font-size: 14px; transition: transform 0.2s; }
+  .as-session.open .as-chevron { transform: rotate(90deg); }
+  .as-routes { display: none; padding: 4px 0 4px 8px; }
+  .as-session.open .as-routes { display: block; }
+  .ar-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; margin: 3px 0; border: 1px solid #333;
+    background: rgba(255,255,255,0.03); font-family: 'Courier New', monospace; font-size: 11px; color: #aaa;
+  }
+  .ar-item .ri-thumb { width: 48px; height: 48px; }
+  .ar-item .ar-info { flex: 1; min-width: 0; }
+  .ar-item .ar-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ar-item .ar-grade { color: #ff8844; font-weight: bold; }
+  .ar-item .ar-restore {
+    background: transparent; border: 1px solid #00e5ff; color: #00e5ff;
+    font-family: 'Courier New', monospace; font-size: 10px; padding: 4px 8px; cursor: pointer; flex-shrink: 0;
+  }
+  .ar-item .ar-restore:active { background: rgba(0,229,255,0.15); }
+  .as-del {
+    background: transparent; border: 1px solid #f66; color: #f66;
+    font-family: 'Courier New', monospace; font-size: 10px; padding: 3px 6px; cursor: pointer; margin-left: 8px;
+  }
+  .as-del:active { background: rgba(255,100,100,0.15); }
+
   /* Loading overlay */
   #loading {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -320,10 +357,22 @@
   <div id="route-list"></div>
   <div id="menu-info" style="font-size:11px; color:#666; margin-top:10px; text-align:center;"></div>
   <div style="display:flex; gap:8px; margin-top:10px;">
+    <button class="btn small" onclick="endSession()" style="border-color:#ff9100;color:#ff9100;">End Session</button>
+    <button class="btn small" onclick="showArchive()">Archive</button>
+  </div>
+  <div style="display:flex; gap:8px; margin-top:6px;">
     <button class="btn small" onclick="exportRoutes()">Export</button>
     <button class="btn small" onclick="document.getElementById('import-input').click()">Import</button>
   </div>
   <input type="file" id="import-input" accept=".json" style="display:none" onchange="importRoutes(this)">
+</div>
+
+<!-- Archive Screen -->
+<div id="archive" class="screen">
+  <h2>// ARCHIVE</h2>
+  <div id="archive-list"></div>
+  <div id="archive-info" style="font-size:11px; color:#666; margin-top:12px; text-align:center;"></div>
+  <button class="btn small" style="margin-top:14px;" onclick="showMenu()">Back</button>
 </div>
 
 <!-- Annotate Screen -->
@@ -406,7 +455,7 @@
 </div>
 
 <script>
-const BUILD_VER = '36';
+const BUILD_VER = '37';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -569,6 +618,13 @@ function getRoutes() {
 }
 function saveRoutes(routes) {
   localStorage.setItem('betalens_routes', JSON.stringify(routes));
+}
+function getArchive() {
+  try { return JSON.parse(localStorage.getItem('betalens_archive') || '[]'); }
+  catch { return []; }
+}
+function saveArchive(archive) {
+  localStorage.setItem('betalens_archive', JSON.stringify(archive));
 }
 // Migrate old single-route format
 function migrateOldRoute() {
@@ -851,6 +907,114 @@ function importRoutes(input) {
   };
   reader.readAsText(file);
   input.value = '';
+}
+
+// ===== SESSION / ARCHIVE =====
+function endSession() {
+  const routes = getRoutes();
+  if (routes.length === 0) { alert('No routes in current session'); return; }
+  if (!confirm('End session? ' + routes.length + ' route(s) will be archived.')) return;
+
+  // Auto-download backup
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10);
+  const blob = new Blob([JSON.stringify(routes)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'betalens-session-' + dateStr + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+
+  // Archive
+  const archive = getArchive();
+  const label = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  archive.push({ date: dateStr, label: label, routes: routes });
+  saveArchive(archive);
+
+  // Clear active
+  saveRoutes([]);
+  showMenu();
+}
+
+function showArchive() {
+  showScreen('archive');
+  const archive = getArchive();
+  const list = document.getElementById('archive-list');
+  const info = document.getElementById('archive-info');
+  list.innerHTML = '';
+
+  if (archive.length === 0) {
+    info.textContent = 'No archived sessions';
+    return;
+  }
+  const total = archive.reduce((s, a) => s + a.routes.length, 0);
+  info.textContent = archive.length + ' session(s), ' + total + ' route(s) total';
+
+  // Reverse chronological
+  for (let si = archive.length - 1; si >= 0; si--) {
+    const session = archive[si];
+    const div = document.createElement('div');
+    div.className = 'as-session';
+    const header = document.createElement('div');
+    header.className = 'as-header';
+    header.innerHTML =
+      `<span><span class="as-date">${session.label || session.date}</span> <span class="as-count">${session.routes.length} route(s)</span></span>` +
+      `<span><button class="as-del" onclick="event.stopPropagation();deleteSession(${si})">X</button> <span class="as-chevron">&#9654;</span></span>`;
+    header.onclick = () => div.classList.toggle('open');
+
+    const routesDiv = document.createElement('div');
+    routesDiv.className = 'as-routes';
+
+    session.routes.forEach((r, ri) => {
+      const item = document.createElement('div');
+      item.className = 'ar-item';
+      const thumbId = 'ar-thumb-' + si + '-' + ri;
+      item.innerHTML =
+        `<div class="ri-thumb" id="${thumbId}" style="display:flex;align-items:center;justify-content:center;font-size:9px;color:#555;">...</div>` +
+        `<div class="ar-info">` +
+          `<span class="ar-grade">${r.grade || '?'}</span> ` +
+          `<span class="ar-name">${r.name || 'Route ' + (ri + 1)}</span>` +
+        `</div>` +
+        `<button class="ar-restore" onclick="restoreFromArchive(${si},${ri})">+ Add</button>`;
+      routesDiv.appendChild(item);
+
+      renderThumbCanvas(r, 96, function(dataUrl) {
+        const el = document.getElementById(thumbId);
+        if (!el) return;
+        if (dataUrl) {
+          const img = document.createElement('img');
+          img.className = 'ri-thumb';
+          img.style.width = '48px'; img.style.height = '48px';
+          img.src = dataUrl;
+          el.replaceWith(img);
+        } else {
+          el.textContent = 'N/A';
+        }
+      });
+    });
+
+    div.appendChild(header);
+    div.appendChild(routesDiv);
+    list.appendChild(div);
+  }
+}
+
+function restoreFromArchive(sessionIdx, routeIdx) {
+  const archive = getArchive();
+  const route = JSON.parse(JSON.stringify(archive[sessionIdx].routes[routeIdx]));
+  const routes = getRoutes();
+  routes.push(route);
+  saveRoutes(routes);
+  alert('Route copied to active session');
+}
+
+function deleteSession(sessionIdx) {
+  if (!confirm('Delete this archived session?')) return;
+  const archive = getArchive();
+  archive.splice(sessionIdx, 1);
+  saveArchive(archive);
+  showArchive();
 }
 
 // ===== SHARE VIA URL =====
