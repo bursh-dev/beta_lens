@@ -378,7 +378,7 @@
 </div>
 
 <script>
-const BUILD_VER = '31';
+const BUILD_VER = '32';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -400,6 +400,7 @@ const ROUTE_COLORS = [
   { name: 'WHITE',   hex: '#ffffff', rgb: [255, 255, 255] },
 ];
 const HOLD_TYPES = ['start', 'hand', 'foot', 'finish'];
+const HOLD_SHORT = { start: 'S', hand: 'H', foot: 'F', finish: 'E' };
 const GRADE_OPTIONS = ['?','V0','V1','V2','V3','V4','V5','V6','V7','V8','V9','V10','V11','V12','V13','V14','V15','V16'];
 
 // ===== GLOBALS =====
@@ -586,7 +587,7 @@ function renderThumbCanvas(route, size, callback) {
       // Label
       const fs = Math.max(8, hr * 0.5);
       ctx.font = `bold ${fs}px Courier New`;
-      const label = h.kind.toUpperCase();
+      const label = HOLD_SHORT[h.kind] || h.kind[0].toUpperCase();
       const lw = ctx.measureText(label).width;
       ctx.fillStyle = `rgba(0,0,0,0.6)`;
       ctx.fillRect(hx - lw / 2 - 2, hy + hr + 1, lw + 4, fs + 2);
@@ -1170,7 +1171,7 @@ function drawAnnotation() {
     // Type label
     const fontSize = Math.max(22, h.r * 0.5);
     annoCtx.font = `bold ${fontSize}px Courier New`;
-    const label = h.kind.toUpperCase();
+    const label = HOLD_SHORT[h.kind] || h.kind[0].toUpperCase();
     const lw = annoCtx.measureText(label).width;
     annoCtx.fillStyle = `rgba(0,0,0,0.6)`;
     annoCtx.fillRect(h.x - lw / 2 - 4, h.y + h.r + 4, lw + 8, fontSize + 4);
@@ -1976,7 +1977,7 @@ function drawLiveOverlay(tracking, holds, matchCount) {
     // Type label below
     const fs = Math.max(14, h.r * 0.4);
     liveCtx.font = `bold ${fs}px Courier New`;
-    const lbl = h.kind.toUpperCase();
+    const lbl = HOLD_SHORT[h.kind] || h.kind[0].toUpperCase();
     const lw = liveCtx.measureText(lbl).width;
     liveCtx.fillStyle = `rgba(0,0,0,0.6)`;
     liveCtx.fillRect(h.x - lw / 2 - 3, h.y + h.r + 2, lw + 6, fs + 3);
