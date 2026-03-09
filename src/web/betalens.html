@@ -36,16 +36,21 @@
   }
   #thumb-overlay {
     display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.85); z-index: 9999;
-    justify-content: center; align-items: center;
+    background: rgba(0,0,0,0.9); z-index: 9999;
+    touch-action: none; overflow: hidden;
   }
-  #thumb-overlay.active { display: flex; }
+  #thumb-overlay.active { display: block; }
   #thumb-overlay img {
-    max-width: 90vw; max-height: 85vh; border-radius: 8px; border: 2px solid #555;
+    position: absolute; transform-origin: 0 0;
+    border-radius: 8px; border: 2px solid #555;
   }
   #thumb-overlay .to-close {
-    position: absolute; top: 16px; right: 20px; color: #aaa; font-size: 28px;
-    font-family: 'Courier New', monospace; cursor: pointer;
+    position: absolute; top: 12px; right: 16px; color: #aaa; font-size: 28px;
+    font-family: 'Courier New', monospace; cursor: pointer; z-index: 10000;
+  }
+  #thumb-overlay .to-hint {
+    position: absolute; bottom: 16px; left: 0; width: 100%; text-align: center;
+    color: #666; font-size: 11px; font-family: 'Courier New', monospace; z-index: 10000;
   }
   .route-item .ri-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .route-item .ri-top { display: flex; align-items: center; gap: 6px; }
@@ -275,9 +280,10 @@
 <body>
 
 <!-- Thumbnail Preview Overlay -->
-<div id="thumb-overlay" onclick="this.classList.remove('active')">
-  <span class="to-close">X</span>
+<div id="thumb-overlay">
+  <span class="to-close" onclick="closeThumbOverlay()">X</span>
   <img id="thumb-overlay-img" src="" alt="">
+  <div class="to-hint">pinch to zoom &middot; drag to pan</div>
 </div>
 
 <!-- Loading Screen -->
@@ -378,7 +384,7 @@
 </div>
 
 <script>
-const BUILD_VER = '32';
+const BUILD_VER = '33';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -600,6 +606,115 @@ function renderThumbCanvas(route, size, callback) {
   img.src = src;
 }
 
+// --- Thumb overlay zoom/pan ---
+let toZoom = 1, toPanX = 0, toPanY = 0, toStartDist = 0, toStartZoom = 1;
+let toPinching = false, toDragging = false, toDragStartX = 0, toDragStartY = 0, toPanStartX = 0, toPanStartY = 0;
+
+function openThumbOverlay(src) {
+  const overlay = document.getElementById('thumb-overlay');
+  const img = document.getElementById('thumb-overlay-img');
+  img.src = src;
+  toZoom = 1; toPanX = 0; toPanY = 0;
+  img.onload = function() {
+    // Fit image to screen
+    const sw = window.innerWidth * 0.9, sh = window.innerHeight * 0.85;
+    const scale = Math.min(sw / img.naturalWidth, sh / img.naturalHeight, 1);
+    img._fitW = img.naturalWidth * scale;
+    img._fitH = img.naturalHeight * scale;
+    img.style.width = img._fitW + 'px';
+    img.style.height = img._fitH + 'px';
+    toPanX = (window.innerWidth - img._fitW) / 2;
+    toPanY = (window.innerHeight - img._fitH) / 2;
+    applyThumbTransform();
+  };
+  overlay.classList.add('active');
+}
+
+function closeThumbOverlay() {
+  document.getElementById('thumb-overlay').classList.remove('active');
+}
+
+function applyThumbTransform() {
+  const img = document.getElementById('thumb-overlay-img');
+  img.style.transform = `translate(${toPanX}px, ${toPanY}px) scale(${toZoom})`;
+}
+
+(function() {
+  const overlay = document.getElementById('thumb-overlay');
+  if (!overlay) return;
+
+  overlay.addEventListener('touchstart', function(e) {
+    if (e.target.classList.contains('to-close')) return;
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      toPinching = true;
+      toDragging = false;
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      toStartDist = Math.sqrt(dx * dx + dy * dy);
+      toStartZoom = toZoom;
+      toPanStartX = toPanX; toPanStartY = toPanY;
+      toDragStartX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      toDragStartY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    } else if (e.touches.length === 1) {
+      toDragging = true;
+      toDragStartX = e.touches[0].clientX;
+      toDragStartY = e.touches[0].clientY;
+      toPanStartX = toPanX; toPanStartY = toPanY;
+    }
+  }, { passive: false });
+
+  overlay.addEventListener('touchmove', function(e) {
+    e.preventDefault();
+    if (toPinching && e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const newZoom = Math.min(Math.max(toStartZoom * (dist / toStartDist), 1), 8);
+      // Zoom toward pinch center
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      toPanX = cx - (cx - toPanStartX) * (newZoom / toStartZoom) + (cx - toDragStartX);
+      toPanY = cy - (cy - toPanStartY) * (newZoom / toStartZoom) + (cy - toDragStartY);
+      toZoom = newZoom;
+      applyThumbTransform();
+    } else if (toDragging && e.touches.length === 1) {
+      toPanX = toPanStartX + (e.touches[0].clientX - toDragStartX);
+      toPanY = toPanStartY + (e.touches[0].clientY - toDragStartY);
+      applyThumbTransform();
+    }
+  }, { passive: false });
+
+  overlay.addEventListener('touchend', function(e) {
+    if (e.touches.length < 2) toPinching = false;
+    if (e.touches.length === 0) {
+      toDragging = false;
+      // Tap to close if not zoomed
+      if (toZoom < 1.05 && !e.target.classList.contains('to-close')) {
+        closeThumbOverlay();
+      }
+    }
+  });
+
+  // Mouse wheel zoom for desktop
+  overlay.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const newZoom = Math.min(Math.max(toZoom * delta, 1), 8);
+    const cx = e.clientX, cy = e.clientY;
+    toPanX = cx - (cx - toPanX) * (newZoom / toZoom);
+    toPanY = cy - (cy - toPanY) * (newZoom / toZoom);
+    toZoom = newZoom;
+    applyThumbTransform();
+  }, { passive: false });
+
+  // Click to close on desktop (only if not zoomed)
+  overlay.addEventListener('click', function(e) {
+    if (e.target.classList.contains('to-close')) return;
+    if (toZoom < 1.05) closeThumbOverlay();
+  });
+})();
+
 function showMenu() {
   showScreen('menu');
   migrateOldRoute();
@@ -639,10 +754,8 @@ function showMenu() {
           img.src = dataUrl;
           img.onclick = function(e) {
             e.stopPropagation();
-            // Render larger preview with markers
-            renderThumbCanvas(r, 512, function(bigUrl) {
-              document.getElementById('thumb-overlay-img').src = bigUrl || dataUrl;
-              document.getElementById('thumb-overlay').classList.add('active');
+            renderThumbCanvas(r, 1024, function(bigUrl) {
+              openThumbOverlay(bigUrl || dataUrl);
             });
           };
           el.replaceWith(img);
