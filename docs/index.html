@@ -115,15 +115,12 @@
   #new-route-prompt {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     display: flex; align-items: center; justify-content: center;
-    background: rgba(0,0,0,0.7); z-index: 50; touch-action: auto;
+    background: rgba(0,0,0,0.7); z-index: 5; pointer-events: none;
   }
-  #new-route-cam-btn {
-    background: transparent; border: 2px solid #00e5ff; color: #00e5ff;
-    font-family: 'Courier New', monospace; font-size: 18px; padding: 20px 36px;
-    letter-spacing: 3px; cursor: pointer; text-transform: uppercase;
-    touch-action: auto; -webkit-tap-highlight-color: rgba(0,229,255,0.2);
+  #new-route-hint {
+    color: #888; font-family: 'Courier New', monospace; font-size: 18px;
+    letter-spacing: 3px; text-transform: uppercase;
   }
-  #new-route-cam-btn:active { background: rgba(0,229,255,0.15); }
 
   /* --- Left Side Panel (Metallic) --- */
   #annotate-panel {
@@ -382,9 +379,7 @@
   <div id="annotate-viewport">
     <canvas id="annotate-canvas"></canvas>
     <div id="new-route-prompt" style="display:none">
-      <label id="new-route-cam-btn" for="new-route-capture">TAKE PHOTO</label>
-      <input type="file" id="new-route-capture" accept="image/*" capture="environment"
-             style="display:none" onchange="newRouteCapture(this)">
+      <div id="new-route-hint">&larr; TAP <span style="color:#00e5ff;font-weight:bold;">CAM</span> TO START</div>
     </div>
   </div>
   <div id="zoom-indicator">1.0x</div>
@@ -458,7 +453,7 @@
 </div>
 
 <script>
-const BUILD_VER = '42';
+const BUILD_VER = '43';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -1350,8 +1345,6 @@ function getTouchCenter(t1, t2) {
 }
 
 function onAnnoTouchStart(e) {
-  const prompt = document.getElementById('new-route-prompt');
-  if (prompt && prompt.style.display === 'flex') return;
   e.preventDefault();
   if (editingHoldIdx >= 0) return; // popup open, ignore canvas touches
   totalTouchMovement = 0;
@@ -1697,15 +1690,10 @@ function annotateLoadImage() {
   input.click();
 }
 
-function newRouteCapture(input) {
-  const file = input.files[0];
-  if (!file) return;
-  input.value = '';
-  document.getElementById('new-route-prompt').style.display = 'none';
-  loadImageFile(file);
-}
 
 function annotateCapturePhoto() {
+  const prompt = document.getElementById('new-route-prompt');
+  if (prompt) prompt.style.display = 'none';
   const input = document.getElementById('capture-input');
   input.onchange = (e) => {
     const file = e.target.files[0];
