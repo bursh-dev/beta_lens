@@ -457,7 +457,44 @@
 </div>
 
 <script>
-const BUILD_VER = '45';
+const BUILD_VER = '46';
+
+// ===== IndexedDB Image Store =====
+let _imgDB = null;
+function openImageDB() {
+  if (_imgDB) return Promise.resolve(_imgDB);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('betalens_images', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('images');
+    req.onsuccess = () => { _imgDB = req.result; resolve(_imgDB); };
+    req.onerror = () => reject(req.error);
+  });
+}
+function imgPut(key, dataUrl) {
+  return openImageDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('images', 'readwrite');
+    tx.objectStore('images').put(dataUrl, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  }));
+}
+function imgGet(key) {
+  return openImageDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('images', 'readonly');
+    const req = tx.objectStore('images').get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  }));
+}
+function imgDel(key) {
+  return openImageDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('images', 'readwrite');
+    tx.objectStore('images').delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  }));
+}
+function imgKey() { return 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -555,7 +592,7 @@ let trackLostFrames = 0;
 const MAX_LOST_FRAMES = 5;
 
 // ===== OPENCV LOADING =====
-function onOpenCvReady() {
+async function onOpenCvReady() {
   cvReady = true;
   document.getElementById('loading').classList.add('hidden');
   // Set build version in both screens
@@ -565,6 +602,8 @@ function onOpenCvReady() {
   if (hv) hv.textContent = 'v' + BUILD_VER;
   const mv = document.getElementById('menu-ver');
   if (mv) mv.textContent = 'v' + BUILD_VER;
+  // Migrate existing localStorage images to IndexedDB
+  await migrateToIDB();
   if (pendingShareTrack) {
     pendingShareTrack = false;
     startLive();
@@ -614,39 +653,128 @@ function showScreen(id) {
   document.getElementById(id).classList.add('active');
 }
 
-function getRoutes() {
+// --- Hydrate: load images from IDB into route objects ---
+async function hydrateImages(routes) {
+  for (const r of routes) {
+    if (r.anchor && r.anchor.imageKey) {
+      r.anchor.dataUrl = await imgGet(r.anchor.imageKey) || '';
+    }
+    if (r.extraAnchors) {
+      for (const ea of r.extraAnchors) {
+        if (ea.imageKey) ea.dataUrl = await imgGet(ea.imageKey) || '';
+      }
+    }
+  }
+  return routes;
+}
+// --- Dehydrate: save images to IDB, strip dataUrl from objects ---
+async function dehydrateImages(routes) {
+  const stripped = [];
+  for (const r of routes) {
+    const copy = JSON.parse(JSON.stringify(r));
+    if (copy.anchor && copy.anchor.dataUrl) {
+      if (!copy.anchor.imageKey) copy.anchor.imageKey = imgKey();
+      await imgPut(copy.anchor.imageKey, copy.anchor.dataUrl);
+      delete copy.anchor.dataUrl;
+    }
+    if (copy.extraAnchors) {
+      for (const ea of copy.extraAnchors) {
+        if (ea.dataUrl) {
+          if (!ea.imageKey) ea.imageKey = imgKey();
+          await imgPut(ea.imageKey, ea.dataUrl);
+          delete ea.dataUrl;
+        }
+      }
+    }
+    stripped.push(copy);
+  }
+  return stripped;
+}
+
+function _getRawRoutes() {
   try { return JSON.parse(localStorage.getItem('betalens_routes') || '[]'); }
   catch { return []; }
 }
-function saveRoutes(routes) {
+
+async function getRoutes() {
+  const routes = _getRawRoutes();
+  return await hydrateImages(routes);
+}
+async function saveRoutes(routes) {
   try {
-    localStorage.setItem('betalens_routes', JSON.stringify(routes));
+    const stripped = await dehydrateImages(routes);
+    localStorage.setItem('betalens_routes', JSON.stringify(stripped));
   } catch (e) {
-    alert('Storage full! Route could not be saved. Free up space by deleting archived sessions.');
+    alert('Storage error: ' + e.message);
   }
 }
-function getArchive() {
-  try { return JSON.parse(localStorage.getItem('betalens_archive') || '[]'); }
-  catch { return []; }
+async function getArchive() {
+  const raw = JSON.parse(localStorage.getItem('betalens_archive') || '[]');
+  for (const session of raw) {
+    await hydrateImages(session.routes);
+  }
+  return raw;
 }
-function saveArchive(archive) {
+async function saveArchive(archive) {
   try {
-    localStorage.setItem('betalens_archive', JSON.stringify(archive));
+    const copy = JSON.parse(JSON.stringify(archive));
+    for (const session of copy) {
+      session.routes = await dehydrateImages(session.routes);
+    }
+    localStorage.setItem('betalens_archive', JSON.stringify(copy));
     return true;
   } catch (e) {
-    alert('Storage full! Archive could not be saved. Export your routes as backup.');
+    alert('Storage error: ' + e.message);
     return false;
   }
 }
+
+// Migrate: move existing embedded images to IDB on first load
+async function migrateToIDB() {
+  if (localStorage.getItem('betalens_idb_migrated')) return;
+  // Migrate routes
+  const rawRoutes = JSON.parse(localStorage.getItem('betalens_routes') || '[]');
+  for (const r of rawRoutes) {
+    if (r.anchor && r.anchor.dataUrl && !r.anchor.imageKey) {
+      r.anchor.imageKey = imgKey();
+      await imgPut(r.anchor.imageKey, r.anchor.dataUrl);
+      delete r.anchor.dataUrl;
+    }
+    if (r.extraAnchors) {
+      for (const ea of r.extraAnchors) {
+        if (ea.dataUrl && !ea.imageKey) {
+          ea.imageKey = imgKey();
+          await imgPut(ea.imageKey, ea.dataUrl);
+          delete ea.dataUrl;
+        }
+      }
+    }
+  }
+  localStorage.setItem('betalens_routes', JSON.stringify(rawRoutes));
+  // Migrate archive
+  const rawArchive = JSON.parse(localStorage.getItem('betalens_archive') || '[]');
+  for (const session of rawArchive) {
+    for (const r of session.routes) {
+      if (r.anchor && r.anchor.dataUrl && !r.anchor.imageKey) {
+        r.anchor.imageKey = imgKey();
+        await imgPut(r.anchor.imageKey, r.anchor.dataUrl);
+        delete r.anchor.dataUrl;
+      }
+    }
+  }
+  localStorage.setItem('betalens_archive', JSON.stringify(rawArchive));
+  localStorage.setItem('betalens_idb_migrated', '1');
+}
+
 // Migrate old single-route format
 function migrateOldRoute() {
   const old = localStorage.getItem('betalens_route');
   if (old) {
-    const routes = getRoutes();
+    const routes = _getRawRoutes();
     const r = JSON.parse(old);
     r.name = 'Route 1';
     routes.push(r);
-    saveRoutes(routes);
+    localStorage.setItem('betalens_routes', JSON.stringify(routes));
     localStorage.removeItem('betalens_route');
   }
 }
@@ -805,10 +933,10 @@ function applyThumbTransform() {
   });
 })();
 
-function showMenu() {
+async function showMenu() {
   showScreen('menu');
   migrateOldRoute();
-  const routes = getRoutes();
+  const routes = await getRoutes();
   const list = document.getElementById('route-list');
   list.innerHTML = '';
   if (routes.length === 0) {
@@ -861,32 +989,38 @@ function showMenu() {
   }
 }
 
-function selectRoute(idx) {
-  const routes = getRoutes();
+async function selectRoute(idx) {
+  const routes = await getRoutes();
   routeData = routes[idx];
   currentRouteIdx = idx;
   startLive();
 }
 
-function moveRoute(idx, dir) {
-  const routes = getRoutes();
+async function moveRoute(idx, dir) {
+  const routes = await getRoutes();
   const newIdx = idx + dir;
   if (newIdx < 0 || newIdx >= routes.length) return;
   [routes[idx], routes[newIdx]] = [routes[newIdx], routes[idx]];
-  saveRoutes(routes);
+  await saveRoutes(routes);
   showMenu();
 }
 
-function deleteRoute(idx) {
+async function deleteRoute(idx) {
   if (!confirm('Delete this route?')) return;
-  const routes = getRoutes();
+  const routes = await getRoutes();
+  const r = routes[idx];
+  // Clean up IDB images
+  if (r && r.anchor && r.anchor.imageKey) await imgDel(r.anchor.imageKey);
+  if (r && r.extraAnchors) {
+    for (const ea of r.extraAnchors) { if (ea.imageKey) await imgDel(ea.imageKey); }
+  }
   routes.splice(idx, 1);
-  saveRoutes(routes);
+  await saveRoutes(routes);
   showMenu();
 }
 
-function exportRoutes() {
-  const routes = getRoutes();
+async function exportRoutes() {
+  const routes = await getRoutes();
   if (routes.length === 0) { alert('No routes to export'); return; }
   const blob = new Blob([JSON.stringify(routes)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -901,16 +1035,16 @@ function importRoutes(input) {
   const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
       const imported = JSON.parse(e.target.result);
       if (!Array.isArray(imported)) throw new Error('Not an array');
-      const routes = getRoutes();
+      const routes = await getRoutes();
       let count = 0;
       for (const r of imported) {
         if (r.holds && r.anchor) { routes.push(r); count++; }
       }
-      saveRoutes(routes);
+      await saveRoutes(routes);
       alert(count + ' route(s) imported');
       showMenu();
     } catch (err) {
@@ -952,7 +1086,7 @@ function compressRouteForArchive(route) {
 }
 
 async function endSession() {
-  const routes = getRoutes();
+  const routes = await getRoutes();
   if (routes.length === 0) { alert('No routes in current session'); return; }
   if (!confirm('End session? ' + routes.length + ' route(s) will be archived.')) return;
 
@@ -971,32 +1105,39 @@ async function endSession() {
   const compressed = await Promise.all(routes.map(r => compressRouteForArchive(r)));
 
   // Archive
-  const archive = getArchive();
+  const archive = await getArchive();
   const label = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   archive.push({ date: dateStr, label: label, routes: compressed });
-  if (!saveArchive(archive)) return; // don't clear if save failed
+  if (!(await saveArchive(archive))) return; // don't clear if save failed
 
   // Clear active
-  saveRoutes([]);
+  await saveRoutes([]);
   showMenu();
 }
 
-function showArchive() {
+async function showArchive() {
   showScreen('archive');
-  const archive = getArchive();
+  const archive = await getArchive();
   const list = document.getElementById('archive-list');
   const info = document.getElementById('archive-info');
   const storageEl = document.getElementById('archive-storage');
   list.innerHTML = '';
 
   // Show storage usage
-  let usedBytes = 0;
+  let lsBytes = 0;
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
-    usedBytes += k.length + localStorage.getItem(k).length;
+    lsBytes += k.length + localStorage.getItem(k).length;
   }
-  const usedMB = (usedBytes * 2 / 1024 / 1024).toFixed(1); // UTF-16 = 2 bytes/char
-  storageEl.textContent = 'Storage: ~' + usedMB + ' MB / 5 MB';
+  const lsMB = (lsBytes * 2 / 1024 / 1024).toFixed(1);
+  if (navigator.storage && navigator.storage.estimate) {
+    navigator.storage.estimate().then(est => {
+      const idbMB = ((est.usage || 0) / 1024 / 1024).toFixed(1);
+      storageEl.textContent = 'localStorage: ' + lsMB + 'MB | Images (IDB): ' + idbMB + 'MB';
+    });
+  } else {
+    storageEl.textContent = 'localStorage: ' + lsMB + 'MB';
+  }
 
   if (archive.length === 0) {
     info.textContent = 'No archived sessions';
@@ -1054,25 +1195,36 @@ function showArchive() {
   }
 }
 
-function restoreFromArchive(sessionIdx, routeIdx) {
-  const archive = getArchive();
+async function restoreFromArchive(sessionIdx, routeIdx) {
+  const archive = await getArchive();
   const route = JSON.parse(JSON.stringify(archive[sessionIdx].routes[routeIdx]));
-  const routes = getRoutes();
+  const routes = await getRoutes();
   routes.push(route);
-  saveRoutes(routes);
+  await saveRoutes(routes);
   alert('Route copied to active session (low-res thumbnail — re-import from backup for full quality)');
 }
 
-function deleteSession(sessionIdx) {
+async function deleteSession(sessionIdx) {
   if (!confirm('Delete this archived session?')) return;
-  const archive = getArchive();
+  const archive = await getArchive();
+  // Clean up IDB images for this session
+  for (const r of archive[sessionIdx].routes) {
+    if (r.anchor && r.anchor.imageKey) await imgDel(r.anchor.imageKey);
+  }
   archive.splice(sessionIdx, 1);
-  saveArchive(archive);
+  await saveArchive(archive);
   showArchive();
 }
 
-function clearAllArchive() {
+async function clearAllArchive() {
   if (!confirm('Delete ALL archived sessions? Make sure you have backup files.')) return;
+  // Clean up IDB images for all archived sessions
+  const archive = await getArchive();
+  for (const session of archive) {
+    for (const r of session.routes) {
+      if (r.anchor && r.anchor.imageKey) await imgDel(r.anchor.imageKey);
+    }
+  }
   localStorage.removeItem('betalens_archive');
   showArchive();
 }
@@ -1232,9 +1384,9 @@ async function checkShareUrl() {
     };
 
     // Save to library
-    const routes = getRoutes();
+    const routes = await getRoutes();
     routes.push(shared);
-    saveRoutes(routes);
+    await saveRoutes(routes);
     currentRouteIdx = routes.length - 1;
     routeData = shared;
 
@@ -1249,7 +1401,7 @@ async function checkShareUrl() {
 }
 
 // ===== ANNOTATE =====
-function startAnnotate(routeIdx) {
+async function startAnnotate(routeIdx) {
   showScreen('annotate');
   annoCanvas = document.getElementById('annotate-canvas');
   annoCtx = annoCanvas.getContext('2d');
@@ -1265,7 +1417,7 @@ function startAnnotate(routeIdx) {
   // Load existing route if editing
   if (routeIdx !== null && routeIdx !== undefined) {
     currentRouteIdx = routeIdx;
-    const routes = getRoutes();
+    const routes = await getRoutes();
     routeData = routes[routeIdx];
   } else {
     currentRouteIdx = -1;
@@ -1762,7 +1914,7 @@ let annoSavedSnapshot = '';  // track if holds changed since last save
 let currentGrade = '?';      // route grade (V0-V16)
 let currentColorIdx = 0;     // index into ROUTE_COLORS
 
-function annotateSave() {
+async function annotateSave() {
   if (!annoImg || annoHolds.length === 0) {
     alert('Add at least one hold first');
     return;
@@ -1792,7 +1944,7 @@ function annotateSave() {
 
   if (annoMode === 'extra') {
     // Save as extra anchor
-    const routes = getRoutes();
+    const routes = await getRoutes();
     const route = routes[currentRouteIdx];
     if (!route.extraAnchors) route.extraAnchors = [];
 
@@ -1810,7 +1962,7 @@ function annotateSave() {
 
     routes[currentRouteIdx] = route;
     routeData = route;
-    saveRoutes(routes);
+    await saveRoutes(routes);
     annoSavedSnapshot = JSON.stringify(annoHolds);
 
     const totalAngles = 1 + route.extraAnchors.length;
@@ -1830,7 +1982,7 @@ function annotateSave() {
       holds: scaledHolds,
       grade: currentGrade,
       colorIdx: currentColorIdx,
-      name: routeData && routeData.name ? routeData.name : 'Route ' + (getRoutes().length + 1),
+      name: routeData && routeData.name ? routeData.name : 'Route ' + (_getRawRoutes().length + 1),
       savedAt: new Date().toISOString()
     };
     // Preserve extra anchors if hold count unchanged
@@ -1842,7 +1994,7 @@ function annotateSave() {
       }
     }
 
-    const routes = getRoutes();
+    const routes = await getRoutes();
     if (currentRouteIdx >= 0 && currentRouteIdx < routes.length) {
       routeData.name = routes[currentRouteIdx].name || routeData.name;
       routes[currentRouteIdx] = routeData;
@@ -1850,7 +2002,7 @@ function annotateSave() {
       routes.push(routeData);
       currentRouteIdx = routes.length - 1;
     }
-    saveRoutes(routes);
+    await saveRoutes(routes);
     annoSavedSnapshot = JSON.stringify(annoHolds);
     updateSaveButton();
     updateAddAngleButton();
@@ -2495,7 +2647,7 @@ function computeCornerDisplacement(H, w, h) {
   return (totalDisp / 4) / diagonal; // normalized average displacement
 }
 
-function tuneAutoCapture(matchCount, H, matchedAnchor) {
+async function tuneAutoCapture(matchCount, H, matchedAnchor) {
   if (!tuningMode || !H || matchCount < TUNE_MIN_MATCHES) return;
   const totalAnchors = 1 + (routeData.extraAnchors ? routeData.extraAnchors.length : 0);
   if (totalAnchors >= TUNE_MAX_ANCHORS) return;
@@ -2548,9 +2700,9 @@ function tuneAutoCapture(matchCount, H, matchedAnchor) {
     addedAt: new Date().toISOString()
   });
 
-  const routes = getRoutes();
+  const routes = await getRoutes();
   routes[currentRouteIdx] = routeData;
-  saveRoutes(routes);
+  await saveRoutes(routes);
 
   // Load new anchor features for tracking
   const newIdx = routeData.extraAnchors.length; // 1-based (0 is primary)
