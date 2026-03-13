@@ -453,7 +453,7 @@
 </div>
 
 <script>
-const BUILD_VER = '43';
+const BUILD_VER = '44';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -615,7 +615,11 @@ function getRoutes() {
   catch { return []; }
 }
 function saveRoutes(routes) {
-  localStorage.setItem('betalens_routes', JSON.stringify(routes));
+  try {
+    localStorage.setItem('betalens_routes', JSON.stringify(routes));
+  } catch (e) {
+    alert('Storage full! Route could not be saved. Free up space by deleting archived sessions.');
+  }
 }
 function getArchive() {
   try { return JSON.parse(localStorage.getItem('betalens_archive') || '[]'); }
