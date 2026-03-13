@@ -370,7 +370,11 @@
   <h2>// ARCHIVE</h2>
   <div id="archive-list"></div>
   <div id="archive-info" style="font-size:11px; color:#666; margin-top:12px; text-align:center;"></div>
-  <button class="btn small" style="margin-top:14px;" onclick="showMenu()">Back</button>
+  <div id="archive-storage" style="font-size:10px; color:#555; margin-top:4px; text-align:center;"></div>
+  <div style="display:flex; gap:8px; margin-top:14px;">
+    <button class="btn small" onclick="showMenu()">Back</button>
+    <button class="btn small" style="border-color:#f66;color:#f66;" onclick="clearAllArchive()">Clear All</button>
+  </div>
 </div>
 
 <!-- Annotate Screen -->
@@ -453,7 +457,7 @@
 </div>
 
 <script>
-const BUILD_VER = '44';
+const BUILD_VER = '45';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -982,7 +986,17 @@ function showArchive() {
   const archive = getArchive();
   const list = document.getElementById('archive-list');
   const info = document.getElementById('archive-info');
+  const storageEl = document.getElementById('archive-storage');
   list.innerHTML = '';
+
+  // Show storage usage
+  let usedBytes = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    usedBytes += k.length + localStorage.getItem(k).length;
+  }
+  const usedMB = (usedBytes * 2 / 1024 / 1024).toFixed(1); // UTF-16 = 2 bytes/char
+  storageEl.textContent = 'Storage: ~' + usedMB + ' MB / 5 MB';
 
   if (archive.length === 0) {
     info.textContent = 'No archived sessions';
@@ -1054,6 +1068,12 @@ function deleteSession(sessionIdx) {
   const archive = getArchive();
   archive.splice(sessionIdx, 1);
   saveArchive(archive);
+  showArchive();
+}
+
+function clearAllArchive() {
+  if (!confirm('Delete ALL archived sessions? Make sure you have backup files.')) return;
+  localStorage.removeItem('betalens_archive');
   showArchive();
 }
 
