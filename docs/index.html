@@ -457,7 +457,7 @@
 </div>
 
 <script>
-const BUILD_VER = '46';
+const BUILD_VER = '47';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -2647,7 +2647,9 @@ function computeCornerDisplacement(H, w, h) {
   return (totalDisp / 4) / diagonal; // normalized average displacement
 }
 
+let _tuneSaving = false;
 async function tuneAutoCapture(matchCount, H, matchedAnchor) {
+  if (_tuneSaving) return;
   if (!tuningMode || !H || matchCount < TUNE_MIN_MATCHES) return;
   const totalAnchors = 1 + (routeData.extraAnchors ? routeData.extraAnchors.length : 0);
   if (totalAnchors >= TUNE_MAX_ANCHORS) return;
@@ -2700,9 +2702,14 @@ async function tuneAutoCapture(matchCount, H, matchedAnchor) {
     addedAt: new Date().toISOString()
   });
 
-  const routes = await getRoutes();
-  routes[currentRouteIdx] = routeData;
-  await saveRoutes(routes);
+  // Save without full hydration — just update this route in raw storage
+  _tuneSaving = true;
+  try {
+    const rawRoutes = _getRawRoutes();
+    const stripped = (await dehydrateImages([routeData]))[0];
+    rawRoutes[currentRouteIdx] = stripped;
+    localStorage.setItem('betalens_routes', JSON.stringify(rawRoutes));
+  } finally { _tuneSaving = false; }
 
   // Load new anchor features for tracking
   const newIdx = routeData.extraAnchors.length; // 1-based (0 is primary)
