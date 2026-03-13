@@ -456,7 +456,7 @@
 </div>
 
 <script>
-const BUILD_VER = '40';
+const BUILD_VER = '41';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -1348,6 +1348,8 @@ function getTouchCenter(t1, t2) {
 }
 
 function onAnnoTouchStart(e) {
+  const prompt = document.getElementById('new-route-prompt');
+  if (prompt && prompt.style.display === 'flex') return;
   e.preventDefault();
   if (editingHoldIdx >= 0) return; // popup open, ignore canvas touches
   totalTouchMovement = 0;
