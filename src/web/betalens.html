@@ -382,7 +382,9 @@
   <div id="annotate-viewport">
     <canvas id="annotate-canvas"></canvas>
     <div id="new-route-prompt" style="display:none">
-      <button id="new-route-cam-btn" onclick="document.getElementById('new-route-prompt').style.display='none';annotateCapturePhoto()">TAKE PHOTO</button>
+      <label id="new-route-cam-btn" for="new-route-capture">TAKE PHOTO</label>
+      <input type="file" id="new-route-capture" accept="image/*" capture="environment"
+             style="display:none" onchange="newRouteCapture(this)">
     </div>
   </div>
   <div id="zoom-indicator">1.0x</div>
@@ -456,7 +458,7 @@
 </div>
 
 <script>
-const BUILD_VER = '41';
+const BUILD_VER = '42';
 
 // Hold type color presets (for labels only now)
 const HOLD_COLORS = {
@@ -1693,6 +1695,14 @@ function annotateLoadImage() {
     loadImageFile(file);
   };
   input.click();
+}
+
+function newRouteCapture(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  document.getElementById('new-route-prompt').style.display = 'none';
+  loadImageFile(file);
 }
 
 function annotateCapturePhoto() {
