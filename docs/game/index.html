@@ -16,6 +16,22 @@
     text-transform: uppercase; letter-spacing: 2px;
   }
   .subtitle { font-size: 11px; color: #666; margin-bottom: 12px; }
+  #splash-screen {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; min-height: 80vh; max-width: 400px;
+  }
+  #splash-screen h1 {
+    font-size: 26px; letter-spacing: 3px; color: #fff;
+    margin-bottom: 4px;
+  }
+  #start-btn {
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    border: 2px solid #4caf50; border-radius: 12px;
+    color: #4caf50; font-family: 'Courier New', monospace;
+    font-size: 18px; font-weight: bold; padding: 14px 48px;
+    cursor: pointer; margin-top: 32px; letter-spacing: 2px;
+  }
+  #start-btn:active { transform: scale(0.96); }
   #score-bar {
     display: flex; gap: 16px; font-size: 14px; margin-bottom: 10px; color: #aaa;
   }
@@ -89,10 +105,18 @@
 </head>
 <body>
 
-<h1>Guess the Grade</h1>
-<div class="subtitle">Can you tell V4 from V6?</div>
+<div id="splash-screen">
+  <h1>GUESS THE GRADE</h1>
+  <div style="font-size:13px; color:#999; margin:20px 24px 0; line-height:1.7; text-align:left;">
+    <p>You'll see 6 bouldering routes with holds marked on the wall.</p>
+    <p style="margin-top:12px;">Your job? Figure out the grade.</p>
+    <p style="margin-top:12px; color:#777;">Some say the grade is in the holds — their size, spacing, how they sit on the wall. Others just guess and hope for the best.</p>
+    <p style="margin-top:12px; color:#666; font-size:11px;">We'll remember how you played.</p>
+  </div>
+  <button id="start-btn" onclick="document.getElementById('splash-screen').style.display='none';startGame()">LET'S GO</button>
+</div>
 
-<div id="game-area">
+<div id="game-area" style="display:none;">
   <div id="score-bar">
     <span class="correct" id="score-correct">0</span>
     <span>/</span>
@@ -422,7 +446,6 @@ function getPunchline(pct, avgTime, zoomCount, fastGuesses) {
   ][Math.floor(Math.random() * 3)];
 }
 
-startGame();
 </script>
 </body>
 </html>
