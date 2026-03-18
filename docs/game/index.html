@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Guess the Grade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #111; color: #ccc; font-family: 'Courier New', monospace;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    -webkit-user-select: none; user-select: none;
+  }
+  h1 {
+    font-size: 20px; margin: 16px 0 4px; color: #fff;
+    text-transform: uppercase; letter-spacing: 2px;
+  }
+  .subtitle { font-size: 11px; color: #666; margin-bottom: 12px; }
+  #score-bar {
+    display: flex; gap: 16px; font-size: 14px; margin-bottom: 10px; color: #aaa;
+  }
+  #score-bar .correct { color: #4caf50; }
+  #score-bar .wrong { color: #f44336; }
+  #progress { font-size: 12px; color: #555; margin-bottom: 8px; }
+  #image-container {
+    width: 92vw; max-width: 500px; aspect-ratio: 1;
+    background: #222; border-radius: 10px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid #333; position: relative;
+  }
+  #image-container canvas {
+    width: 100%; height: 100%; object-fit: contain;
+  }
+  #choices {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    margin: 14px 0; width: 92vw; max-width: 500px;
+  }
+  .choice-btn {
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    border: 2px solid #444; border-radius: 10px;
+    color: #ddd; font-family: 'Courier New', monospace;
+    font-size: 18px; font-weight: bold; padding: 16px 0;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .choice-btn:active { transform: scale(0.96); }
+  .choice-btn.correct {
+    border-color: #4caf50; background: linear-gradient(135deg, #1b3a1b, #0d1f0d);
+    color: #4caf50;
+  }
+  .choice-btn.wrong {
+    border-color: #f44336; background: linear-gradient(135deg, #3a1b1b, #1f0d0d);
+    color: #f44336;
+  }
+  .choice-btn.reveal {
+    border-color: #4caf50; color: #4caf50;
+  }
+  .choice-btn:disabled { cursor: default; }
+  #feedback {
+    font-size: 22px; font-weight: bold; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #feedback.correct { color: #4caf50; }
+  #feedback.wrong { color: #f44336; }
+  #next-btn {
+    background: linear-gradient(135deg, #333, #222);
+    border: 2px solid #666; border-radius: 10px;
+    color: #fff; font-family: 'Courier New', monospace;
+    font-size: 16px; padding: 12px 32px; margin: 8px 0 20px;
+    cursor: pointer; display: none;
+  }
+  #next-btn:active { transform: scale(0.96); }
+  #result-screen {
+    display: none; text-align: center; padding: 40px 20px;
+  }
+  #result-screen h2 { font-size: 28px; color: #fff; margin-bottom: 16px; }
+  #result-screen .big-score { font-size: 64px; font-weight: bold; margin: 20px 0; }
+  #result-screen .big-score.great { color: #4caf50; }
+  #result-screen .big-score.ok { color: #ff9800; }
+  #result-screen .big-score.bad { color: #f44336; }
+  #play-again {
+    background: linear-gradient(135deg, #333, #222);
+    border: 2px solid #666; border-radius: 10px;
+    color: #fff; font-family: 'Courier New', monospace;
+    font-size: 16px; padding: 14px 40px; margin-top: 20px;
+    cursor: pointer;
+  }
+  #game-area { display: flex; flex-direction: column; align-items: center; }
+  .back-link {
+    font-size: 11px; color: #555; text-decoration: none; margin-bottom: 16px;
+  }
+  .back-link:hover { color: #888; }
+</style>
+</head>
+<body>
+
+<h1>Guess the Grade</h1>
+<div class="subtitle">Can you tell V4 from V6?</div>
+
+<div id="game-area">
+  <div id="score-bar">
+    <span class="correct" id="score-correct">0</span>
+    <span>/</span>
+    <span id="score-total">0</span>
+    <span style="margin-left:8px" id="progress"></span>
+  </div>
+
+  <div id="image-container">
+    <canvas id="route-canvas"></canvas>
+  </div>
+
+  <div id="choices"></div>
+  <div id="feedback"></div>
+  <button id="next-btn" onclick="nextRound()">NEXT</button>
+</div>
+
+<div id="result-screen">
+  <h2>RESULTS</h2>
+  <div class="big-score" id="final-score"></div>
+  <div id="final-msg"></div>
+  <button id="play-again" onclick="startGame()">PLAY AGAIN</button>
+</div>
+
+<a class="back-link" href="../">BetaLens</a>
+
+<script>
+const ROUTES = [
+  { img: 'images/photo_1_2026-03-18_11-04-09.jpg', grade: 'V6' },
+  { img: 'images/photo_2_2026-03-18_11-04-09.jpg', grade: 'V6' },
+  { img: 'images/photo_3_2026-03-18_11-04-09.jpg', grade: 'V6' },
+  { img: 'images/photo_4_2026-03-18_11-04-09.jpg', grade: 'V4' },
+  { img: 'images/photo_5_2026-03-18_11-04-09.jpg', grade: 'V5' },
+  { img: 'images/photo_6_2026-03-18_11-04-09.jpg', grade: 'V4' },
+];
+
+const GRADE_RANGES = ['V0-V3', 'V4-V5', 'V6-V7', 'V8+'];
+
+function gradeToRange(grade) {
+  const n = parseInt(grade.substring(1));
+  if (n <= 3) return 'V0-V3';
+  if (n <= 5) return 'V4-V5';
+  if (n <= 7) return 'V6-V7';
+  return 'V8+';
+}
+
+let order = [];
+let current = 0;
+let correct = 0;
+let total = 0;
+let answered = false;
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function startGame() {
+  order = shuffle([...Array(ROUTES.length).keys()]);
+  current = 0;
+  correct = 0;
+  total = 0;
+  document.getElementById('result-screen').style.display = 'none';
+  document.getElementById('game-area').style.display = 'flex';
+  updateScore();
+  showRound();
+}
+
+function updateScore() {
+  document.getElementById('score-correct').textContent = correct;
+  document.getElementById('score-total').textContent = total;
+  document.getElementById('progress').textContent = (current + 1) + '/' + ROUTES.length;
+}
+
+function showRound() {
+  answered = false;
+  const route = ROUTES[order[current]];
+  const canvas = document.getElementById('route-canvas');
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+  img.onload = function() {
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+    // Black out the grade label in top-left corner
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, 220, 50);
+  };
+  img.src = route.img;
+
+  const choices = document.getElementById('choices');
+  choices.innerHTML = '';
+  for (const range of GRADE_RANGES) {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = range;
+    btn.onclick = function() { handleAnswer(range, btn); };
+    choices.appendChild(btn);
+  }
+
+  document.getElementById('feedback').textContent = '';
+  document.getElementById('feedback').className = 'feedback';
+  document.getElementById('next-btn').style.display = 'none';
+  updateScore();
+}
+
+function handleAnswer(chosen, btn) {
+  if (answered) return;
+  answered = true;
+  total++;
+
+  const route = ROUTES[order[current]];
+  const correctRange = gradeToRange(route.grade);
+  const isCorrect = chosen === correctRange;
+
+  if (isCorrect) {
+    correct++;
+    btn.classList.add('correct');
+    document.getElementById('feedback').textContent = 'CORRECT! ' + route.grade;
+    document.getElementById('feedback').className = 'correct';
+  } else {
+    btn.classList.add('wrong');
+    document.getElementById('feedback').textContent = 'NOPE! ' + route.grade;
+    document.getElementById('feedback').className = 'wrong';
+    // Highlight correct answer
+    const btns = document.querySelectorAll('.choice-btn');
+    btns.forEach(b => {
+      if (b.textContent === correctRange) b.classList.add('reveal');
+    });
+  }
+
+  // Disable all buttons
+  document.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
+  updateScore();
+
+  if (current < ROUTES.length - 1) {
+    document.getElementById('next-btn').style.display = 'block';
+  } else {
+    setTimeout(showResults, 1200);
+  }
+}
+
+function nextRound() {
+  current++;
+  showRound();
+}
+
+function showResults() {
+  document.getElementById('game-area').style.display = 'none';
+  const screen = document.getElementById('result-screen');
+  screen.style.display = 'block';
+
+  const pct = Math.round((correct / total) * 100);
+  const scoreEl = document.getElementById('final-score');
+  scoreEl.textContent = correct + '/' + total;
+  scoreEl.className = 'big-score ' + (pct >= 80 ? 'great' : pct >= 50 ? 'ok' : 'bad');
+
+  const msg = document.getElementById('final-msg');
+  if (pct === 100) msg.textContent = 'Perfect! You know your grades.';
+  else if (pct >= 80) msg.textContent = 'Solid! Almost nailed it.';
+  else if (pct >= 50) msg.textContent = 'Not bad, keep climbing!';
+  else msg.textContent = 'Time to hit the gym more!';
+}
+
+startGame();
+</script>
+</body>
+</html>
