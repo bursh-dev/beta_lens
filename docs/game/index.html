@@ -32,7 +32,7 @@
     width: 100%; height: 100%; object-fit: contain;
   }
   #choices {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
     margin: 14px 0; width: 92vw; max-width: 500px;
   }
   .choice-btn {
@@ -132,15 +132,7 @@ const ROUTES = [
   { img: 'images/photo_6_2026-03-18_11-04-09.jpg', grade: 'V4' },
 ];
 
-const GRADE_RANGES = ['V0-V3', 'V4-V5', 'V6-V7', 'V8+'];
-
-function gradeToRange(grade) {
-  const n = parseInt(grade.substring(1));
-  if (n <= 3) return 'V0-V3';
-  if (n <= 5) return 'V4-V5';
-  if (n <= 7) return 'V6-V7';
-  return 'V8+';
-}
+const GRADES = ['V4', 'V5', 'V6'];
 
 let order = [];
 let current = 0;
@@ -191,7 +183,7 @@ function showRound() {
 
   const choices = document.getElementById('choices');
   choices.innerHTML = '';
-  for (const range of GRADE_RANGES) {
+  for (const range of GRADES) {
     const btn = document.createElement('button');
     btn.className = 'choice-btn';
     btn.textContent = range;
@@ -211,7 +203,7 @@ function handleAnswer(chosen, btn) {
   total++;
 
   const route = ROUTES[order[current]];
-  const correctRange = gradeToRange(route.grade);
+  const correctRange = route.grade;
   const isCorrect = chosen === correctRange;
 
   if (isCorrect) {
