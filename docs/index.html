@@ -48,12 +48,6 @@
     position: absolute; top: 12px; right: 16px; color: #aaa; font-size: 28px;
     font-family: 'Courier New', monospace; cursor: pointer; z-index: 10000;
   }
-  #thumb-overlay .to-dl {
-    position: absolute; top: 12px; left: 16px; color: #aaa; font-size: 22px;
-    font-family: 'Courier New', monospace; cursor: pointer; z-index: 10000;
-    background: rgba(60,60,60,0.7); border: 1px solid #666; border-radius: 6px;
-    padding: 2px 10px;
-  }
   #thumb-overlay .to-hint {
     position: absolute; bottom: 16px; left: 0; width: 100%; text-align: center;
     color: #666; font-size: 11px; font-family: 'Courier New', monospace; z-index: 10000;
@@ -341,7 +335,6 @@
 
 <!-- Thumbnail Preview Overlay -->
 <div id="thumb-overlay">
-  <span class="to-dl" onclick="downloadThumbImage()">SAVE</span>
   <span class="to-close" onclick="closeThumbOverlay()">X</span>
   <img id="thumb-overlay-img" src="" alt="">
   <div class="to-hint">pinch to zoom &middot; drag to pan</div>
@@ -368,6 +361,7 @@
   <div style="display:flex; gap:8px; margin-top:6px;">
     <button class="btn small" onclick="exportRoutes()">Export</button>
     <button class="btn small" onclick="document.getElementById('import-input').click()">Import</button>
+    <button class="btn small" onclick="saveAllImages()">Save Images</button>
   </div>
   <input type="file" id="import-input" accept=".json" style="display:none" onchange="importRoutes(this)">
 </div>
@@ -464,7 +458,7 @@
 </div>
 
 <script>
-const BUILD_VER = '48';
+const BUILD_VER = '49';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -861,14 +855,76 @@ function closeThumbOverlay() {
   document.getElementById('thumb-overlay').classList.remove('active');
 }
 
-function downloadThumbImage() {
-  const img = document.getElementById('thumb-overlay-img');
-  if (!img.src) return;
-  const a = document.createElement('a');
-  a.href = img.src;
-  const safeName = toRouteName.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
-  a.download = 'betalens-' + safeName + '.png';
-  a.click();
+async function saveAllImages() {
+  const routes = await getRoutes();
+  if (routes.length === 0) { alert('No routes'); return; }
+  let saved = 0;
+  for (let i = 0; i < routes.length; i++) {
+    const r = routes[i];
+    if (!r.anchor || !r.anchor.dataUrl) continue;
+    await new Promise(resolve => {
+      renderFullImage(r, function(blob) {
+        if (!blob) { resolve(); return; }
+        const name = (r.name || 'route_' + (i + 1)).replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'betalens-' + name + '.png';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        saved++;
+        resolve();
+      });
+    });
+  }
+  alert(saved + ' image(s) saved');
+}
+
+function renderFullImage(route, callback) {
+  const src = route.anchor && route.anchor.dataUrl;
+  if (!src) { callback(null); return; }
+  const img = new Image();
+  img.onload = function() {
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const rc = ROUTE_COLORS[route.colorIdx || 0];
+    const [cr, cg, cb] = rc.rgb;
+    for (const h of route.holds) {
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},0.45)`;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(${cr},${cg},${cb},0.8)`;
+      ctx.lineWidth = Math.max(2, h.r * 0.1);
+      ctx.stroke();
+      const fs = Math.max(14, h.r * 0.5);
+      ctx.font = `bold ${fs}px Courier New`;
+      const label = HOLD_SHORT[h.kind] || h.kind[0].toUpperCase();
+      const lw = ctx.measureText(label).width;
+      ctx.fillStyle = `rgba(0,0,0,0.6)`;
+      ctx.fillRect(h.x - lw / 2 - 2, h.y + h.r + 2, lw + 4, fs + 2);
+      ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
+      ctx.fillText(label, h.x - lw / 2, h.y + h.r + fs + 1);
+    }
+    // Add route name + grade label at top
+    const title = (route.grade || '') + ' ' + (route.name || '');
+    if (title.trim()) {
+      ctx.font = 'bold 28px Courier New';
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(8, 8, ctx.measureText(title).width + 16, 36);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(title, 16, 34);
+    }
+    c.toBlob(function(blob) { callback(blob); }, 'image/png');
+  };
+  img.onerror = function() { callback(null); };
+  img.src = src;
 }
 
 function applyThumbTransform() {
