@@ -25,11 +25,15 @@
   #image-container {
     width: 92vw; max-width: 500px; aspect-ratio: 1;
     background: #222; border-radius: 10px; overflow: hidden;
-    display: flex; align-items: center; justify-content: center;
     border: 2px solid #333; position: relative;
+    touch-action: none;
   }
   #image-container canvas {
-    width: 100%; height: 100%; object-fit: contain;
+    position: absolute; transform-origin: 0 0;
+  }
+  .zoom-hint {
+    position: absolute; bottom: 4px; left: 0; width: 100%; text-align: center;
+    color: #555; font-size: 10px; pointer-events: none; z-index: 1;
   }
   #choices {
     display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
@@ -106,6 +110,7 @@
 
   <div id="image-container">
     <canvas id="route-canvas"></canvas>
+    <div class="zoom-hint">pinch to zoom</div>
   </div>
 
   <div id="choices"></div>
@@ -165,6 +170,98 @@ function updateScore() {
   document.getElementById('progress').textContent = (current + 1) + '/' + ROUTES.length;
 }
 
+// --- Zoom/Pan state ---
+let zScale = 1, zPanX = 0, zPanY = 0;
+let zPinching = false, zDragging = false;
+let zStartDist = 0, zStartZoom = 1;
+let zDragStartX = 0, zDragStartY = 0, zPanStartX = 0, zPanStartY = 0;
+let zContW = 0, zContH = 0, zFitScale = 1;
+
+function applyZoom() {
+  const canvas = document.getElementById('route-canvas');
+  canvas.style.transform = `translate(${zPanX}px, ${zPanY}px) scale(${zScale})`;
+}
+
+function resetZoom() {
+  const container = document.getElementById('image-container');
+  const canvas = document.getElementById('route-canvas');
+  zContW = container.clientWidth;
+  zContH = container.clientHeight;
+  zFitScale = Math.min(zContW / canvas.width, zContH / canvas.height);
+  zScale = zFitScale;
+  zPanX = (zContW - canvas.width * zScale) / 2;
+  zPanY = (zContH - canvas.height * zScale) / 2;
+  applyZoom();
+}
+
+function clampPan() {
+  const cw = document.getElementById('route-canvas').width * zScale;
+  const ch = document.getElementById('route-canvas').height * zScale;
+  if (cw <= zContW) { zPanX = (zContW - cw) / 2; }
+  else { zPanX = Math.min(0, Math.max(zContW - cw, zPanX)); }
+  if (ch <= zContH) { zPanY = (zContH - ch) / 2; }
+  else { zPanY = Math.min(0, Math.max(zContH - ch, zPanY)); }
+}
+
+(function() {
+  const cont = document.getElementById('image-container');
+  function dist(t) {
+    const dx = t[0].clientX - t[1].clientX;
+    const dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  function mid(t) {
+    return { x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 };
+  }
+  cont.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 2) {
+      zPinching = true; zDragging = false;
+      zStartDist = dist(e.touches);
+      zStartZoom = zScale;
+      e.preventDefault();
+    } else if (e.touches.length === 1 && zScale > zFitScale * 1.05) {
+      zDragging = true;
+      zDragStartX = e.touches[0].clientX;
+      zDragStartY = e.touches[0].clientY;
+      zPanStartX = zPanX; zPanStartY = zPanY;
+    }
+  }, { passive: false });
+  cont.addEventListener('touchmove', function(e) {
+    if (zPinching && e.touches.length === 2) {
+      e.preventDefault();
+      const d = dist(e.touches);
+      const m = mid(e.touches);
+      const rect = cont.getBoundingClientRect();
+      const mx = m.x - rect.left, my = m.y - rect.top;
+      const newScale = Math.max(zFitScale, Math.min(zStartZoom * (d / zStartDist), zFitScale * 5));
+      // Zoom toward pinch center
+      zPanX = mx - (mx - zPanX) * (newScale / zScale);
+      zPanY = my - (my - zPanY) * (newScale / zScale);
+      zScale = newScale;
+      clampPan();
+      applyZoom();
+    } else if (zDragging && e.touches.length === 1) {
+      e.preventDefault();
+      zPanX = zPanStartX + (e.touches[0].clientX - zDragStartX);
+      zPanY = zPanStartY + (e.touches[0].clientY - zDragStartY);
+      clampPan();
+      applyZoom();
+    }
+  }, { passive: false });
+  cont.addEventListener('touchend', function(e) {
+    if (e.touches.length < 2) zPinching = false;
+    if (e.touches.length < 1) zDragging = false;
+  });
+  // Double tap to reset zoom
+  let lastTap = 0;
+  cont.addEventListener('touchend', function(e) {
+    if (e.touches.length > 0) return;
+    const now = Date.now();
+    if (now - lastTap < 300) { resetZoom(); e.preventDefault(); }
+    lastTap = now;
+  });
+})();
+
 function showRound() {
   answered = false;
   const route = ROUTES[order[current]];
@@ -175,9 +272,9 @@ function showRound() {
     canvas.width = img.width;
     canvas.height = img.height;
     ctx.drawImage(img, 0, 0);
-    // Black out the grade label in top-left corner
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, 220, 50);
+    resetZoom();
   };
   img.src = route.img;
 
