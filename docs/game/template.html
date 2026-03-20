@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Guess the Grade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #111; color: #ccc; font-family: 'Courier New', monospace;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    -webkit-user-select: none; user-select: none;
+  }
+  h1 {
+    font-size: 20px; margin: 16px 0 4px; color: #fff;
+    text-transform: uppercase; letter-spacing: 2px;
+  }
+  .subtitle { font-size: 11px; color: #666; margin-bottom: 12px; }
+  #splash-screen {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; min-height: 80vh; max-width: 400px;
+  }
+  #splash-screen h1 {
+    font-size: 26px; letter-spacing: 3px; color: #fff;
+    margin-bottom: 4px;
+  }
+  #start-btn {
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    border: 2px solid #4caf50; border-radius: 12px;
+    color: #4caf50; font-family: 'Courier New', monospace;
+    font-size: 18px; font-weight: bold; padding: 14px 48px;
+    cursor: pointer; margin-top: 32px; letter-spacing: 2px;
+  }
+  #start-btn:active { transform: scale(0.96); }
+  #score-bar {
+    display: flex; gap: 16px; font-size: 14px; margin-bottom: 10px; color: #aaa;
+  }
+  #score-bar .correct { color: #4caf50; }
+  #score-bar .wrong { color: #f44336; }
+  #progress { font-size: 12px; color: #555; margin-bottom: 8px; }
+  #image-container {
+    width: 92vw; max-width: 500px; aspect-ratio: 1;
+    background: #222; border-radius: 10px; overflow: hidden;
+    border: 2px solid #333; position: relative;
+    touch-action: none;
+  }
+  #image-container canvas {
+    position: absolute; transform-origin: 0 0;
+  }
+  .zoom-hint {
+    position: absolute; bottom: 4px; left: 0; width: 100%; text-align: center;
+    color: #555; font-size: 10px; pointer-events: none; z-index: 1;
+  }
+  #choices {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+    margin: 14px 0; width: 92vw; max-width: 500px;
+  }
+  .choice-btn {
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    border: 2px solid #444; border-radius: 10px;
+    color: #ddd; font-family: 'Courier New', monospace;
+    font-size: 18px; font-weight: bold; padding: 16px 0;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .choice-btn:active { transform: scale(0.96); }
+  .choice-btn.correct {
+    border-color: #4caf50; background: linear-gradient(135deg, #1b3a1b, #0d1f0d);
+    color: #4caf50;
+  }
+  .choice-btn.wrong {
+    border-color: #f44336; background: linear-gradient(135deg, #3a1b1b, #1f0d0d);
+    color: #f44336;
+  }
+  .choice-btn.reveal {
+    border-color: #4caf50; color: #4caf50;
+  }
+  .choice-btn:disabled { cursor: default; }
+  #feedback {
+    font-size: 22px; font-weight: bold; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #feedback.correct { color: #4caf50; }
+  #feedback.wrong { color: #f44336; }
+  #result-screen {
+    display: none; text-align: center; padding: 40px 20px;
+  }
+  #result-screen h2 { font-size: 28px; color: #fff; margin-bottom: 16px; }
+  #result-screen .big-score { font-size: 64px; font-weight: bold; margin: 20px 0; }
+  #result-screen .big-score.great { color: #4caf50; }
+  #result-screen .big-score.ok { color: #ff9800; }
+  #result-screen .big-score.bad { color: #f44336; }
+  #play-again {
+    background: linear-gradient(135deg, #333, #222);
+    border: 2px solid #666; border-radius: 10px;
+    color: #fff; font-family: 'Courier New', monospace;
+    font-size: 16px; padding: 14px 40px; margin-top: 20px;
+    cursor: pointer;
+  }
+  #game-area { display: flex; flex-direction: column; align-items: center; }
+  .back-link {
+    font-size: 11px; color: #555; text-decoration: none; margin-bottom: 16px;
+  }
+  .back-link:hover { color: #888; }
+</style>
+</head>
+<body>
+
+<div id="splash-screen">
+  <h1>GUESS THE GRADE</h1>
+  <div style="font-size:13px; color:#999; margin:20px 24px 0; line-height:1.7; text-align:left;">
+    <p>You'll see %%ROUTE_COUNT%% bouldering routes with holds marked on the wall.</p>
+    <p style="margin-top:12px;">Your job? Figure out the grade.</p>
+    <p style="margin-top:12px; color:#777;">Some say the grade is in the holds — their size, spacing, how they sit on the wall. Others just guess and hope for the best.</p>
+    <p style="margin-top:12px; color:#666; font-size:11px;">We'll remember how you played.</p>
+  </div>
+  <button id="start-btn" onclick="document.getElementById('splash-screen').style.display='none';startGame()">LET'S GO</button>
+</div>
+
+<div id="game-area" style="display:none;">
+  <div id="score-bar">
+    <span class="correct" id="score-correct">0</span>
+    <span>/</span>
+    <span id="score-total">0</span>
+    <span style="margin-left:8px" id="progress"></span>
+  </div>
+
+  <div id="image-container">
+    <canvas id="route-canvas"></canvas>
+    <div class="zoom-hint">pinch to zoom</div>
+  </div>
+
+  <div id="choices"></div>
+  <div id="feedback"></div>
+</div>
+
+<div id="result-screen">
+  <h2>RESULTS</h2>
+  <div class="big-score" id="final-score"></div>
+  <div id="final-stats" style="font-size:12px; color:#888; margin-bottom:16px; line-height:1.8;"></div>
+  <div id="final-msg" style="font-size:14px; line-height:1.6; padding:0 16px; color:#ccc;"></div>
+  <button id="play-again" onclick="startGame()">PLAY AGAIN</button>
+</div>
+
+<a class="back-link" href="../">BetaLens</a>
+
+<script>
+const ROUTES = %%ROUTES_JSON%%;
+
+const GRADES = %%GRADES_JSON%%;
+
+let order = [];
+let current = 0;
+let correct = 0;
+let total = 0;
+let answered = false;
+let roundStart = 0;
+let usedZoom = false;
+let roundStats = []; // { time, zoomed, correct }
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function startGame() {
+  order = shuffle([...Array(ROUTES.length).keys()]);
+  current = 0;
+  correct = 0;
+  total = 0;
+  roundStats = [];
+  document.getElementById('result-screen').style.display = 'none';
+  document.getElementById('game-area').style.display = 'flex';
+  updateScore();
+  showRound();
+}
+
+function updateScore() {
+  document.getElementById('score-correct').textContent = correct;
+  document.getElementById('score-total').textContent = total;
+  document.getElementById('progress').textContent = (current + 1) + '/' + ROUTES.length;
+}
+
+// --- Zoom/Pan state ---
+let zScale = 1, zPanX = 0, zPanY = 0;
+let zPinching = false, zDragging = false;
+let zStartDist = 0, zStartZoom = 1;
+let zDragStartX = 0, zDragStartY = 0, zPanStartX = 0, zPanStartY = 0;
+let zContW = 0, zContH = 0, zFitScale = 1;
+
+function applyZoom() {
+  const canvas = document.getElementById('route-canvas');
+  canvas.style.transform = `translate(${zPanX}px, ${zPanY}px) scale(${zScale})`;
+}
+
+function resetZoom() {
+  const container = document.getElementById('image-container');
+  const canvas = document.getElementById('route-canvas');
+  zContW = container.clientWidth;
+  zContH = container.clientHeight;
+  zFitScale = Math.min(zContW / canvas.width, zContH / canvas.height);
+  zScale = zFitScale;
+  zPanX = (zContW - canvas.width * zScale) / 2;
+  zPanY = (zContH - canvas.height * zScale) / 2;
+  applyZoom();
+}
+
+function clampPan() {
+  const cw = document.getElementById('route-canvas').width * zScale;
+  const ch = document.getElementById('route-canvas').height * zScale;
+  if (cw <= zContW) { zPanX = (zContW - cw) / 2; }
+  else { zPanX = Math.min(0, Math.max(zContW - cw, zPanX)); }
+  if (ch <= zContH) { zPanY = (zContH - ch) / 2; }
+  else { zPanY = Math.min(0, Math.max(zContH - ch, zPanY)); }
+}
+
+(function() {
+  const cont = document.getElementById('image-container');
+  function dist(t) {
+    const dx = t[0].clientX - t[1].clientX;
+    const dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  function mid(t) {
+    return { x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 };
+  }
+  cont.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 2) {
+      zPinching = true; zDragging = false;
+      zStartDist = dist(e.touches);
+      zStartZoom = zScale;
+      usedZoom = true;
+      e.preventDefault();
+    } else if (e.touches.length === 1 && zScale > zFitScale * 1.05) {
+      zDragging = true;
+      zDragStartX = e.touches[0].clientX;
+      zDragStartY = e.touches[0].clientY;
+      zPanStartX = zPanX; zPanStartY = zPanY;
+    }
+  }, { passive: false });
+  cont.addEventListener('touchmove', function(e) {
+    if (zPinching && e.touches.length === 2) {
+      e.preventDefault();
+      const d = dist(e.touches);
+      const m = mid(e.touches);
+      const rect = cont.getBoundingClientRect();
+      const mx = m.x - rect.left, my = m.y - rect.top;
+      const newScale = Math.max(zFitScale, Math.min(zStartZoom * (d / zStartDist), zFitScale * 5));
+      // Zoom toward pinch center
+      zPanX = mx - (mx - zPanX) * (newScale / zScale);
+      zPanY = my - (my - zPanY) * (newScale / zScale);
+      zScale = newScale;
+      clampPan();
+      applyZoom();
+    } else if (zDragging && e.touches.length === 1) {
+      e.preventDefault();
+      zPanX = zPanStartX + (e.touches[0].clientX - zDragStartX);
+      zPanY = zPanStartY + (e.touches[0].clientY - zDragStartY);
+      clampPan();
+      applyZoom();
+    }
+  }, { passive: false });
+  cont.addEventListener('touchend', function(e) {
+    if (e.touches.length < 2) zPinching = false;
+    if (e.touches.length < 1) zDragging = false;
+  });
+  // Double tap to reset zoom
+  let lastTap = 0;
+  cont.addEventListener('touchend', function(e) {
+    if (e.touches.length > 0) return;
+    const now = Date.now();
+    if (now - lastTap < 300) { resetZoom(); e.preventDefault(); }
+    lastTap = now;
+  });
+})();
+
+function showRound() {
+  answered = false;
+  roundStart = Date.now();
+  usedZoom = false;
+  const route = ROUTES[order[current]];
+  const canvas = document.getElementById('route-canvas');
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+  img.onload = function() {
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, 220, 50);
+    resetZoom();
+  };
+  img.src = route.img;
+
+  const choices = document.getElementById('choices');
+  choices.innerHTML = '';
+  for (const range of GRADES) {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = range;
+    btn.onclick = function() { handleAnswer(range, btn); };
+    choices.appendChild(btn);
+  }
+
+  document.getElementById('feedback').textContent = '';
+  document.getElementById('feedback').className = 'feedback';
+  updateScore();
+}
+
+function handleAnswer(chosen, btn) {
+  if (answered) return;
+  answered = true;
+  total++;
+
+  const elapsed = (Date.now() - roundStart) / 1000;
+  const route = ROUTES[order[current]];
+  const correctRange = route.grade;
+  const isCorrect = chosen === correctRange;
+
+  roundStats.push({ time: elapsed, zoomed: usedZoom, correct: isCorrect });
+
+  if (isCorrect) {
+    correct++;
+    btn.classList.add('correct');
+    document.getElementById('feedback').textContent = 'CORRECT! ' + route.grade;
+    document.getElementById('feedback').className = 'correct';
+  } else {
+    btn.classList.add('wrong');
+    document.getElementById('feedback').textContent = 'NOPE! ' + route.grade;
+    document.getElementById('feedback').className = 'wrong';
+    const btns = document.querySelectorAll('.choice-btn');
+    btns.forEach(b => {
+      if (b.textContent === correctRange) b.classList.add('reveal');
+    });
+  }
+
+  document.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
+  updateScore();
+
+  // Auto-advance after brief pause
+  setTimeout(function() {
+    if (current < ROUTES.length - 1) {
+      current++;
+      showRound();
+    } else {
+      showResults();
+    }
+  }, 1500);
+}
+
+function showResults() {
+  document.getElementById('game-area').style.display = 'none';
+  const screen = document.getElementById('result-screen');
+  screen.style.display = 'block';
+
+  const pct = Math.round((correct / total) * 100);
+  const avgTime = roundStats.reduce((s, r) => s + r.time, 0) / roundStats.length;
+  const zoomCount = roundStats.filter(r => r.zoomed).length;
+  const fastGuesses = roundStats.filter(r => r.time < 3).length;
+  const totalTime = roundStats.reduce((s, r) => s + r.time, 0);
+
+  const scoreEl = document.getElementById('final-score');
+  scoreEl.textContent = correct + '/' + total;
+  scoreEl.className = 'big-score ' + (pct >= 80 ? 'great' : pct >= 50 ? 'ok' : 'bad');
+
+  // Stats line
+  const statsEl = document.getElementById('final-stats');
+  statsEl.innerHTML =
+    `<div>Total time: ${totalTime.toFixed(1)}s (avg ${avgTime.toFixed(1)}s/route)</div>` +
+    `<div>Zoomed in: ${zoomCount}/${total} routes</div>`;
+
+  // Pick a punchline based on behavior
+  const msg = document.getElementById('final-msg');
+  msg.innerHTML = getPunchline(pct, avgTime, zoomCount, fastGuesses);
+}
+
+function getPunchline(pct, avgTime, zoomCount, fastGuesses) {
+  // Speed demon who didn't even look
+  if (avgTime < 2 && pct < 50) return [
+    '"I don\'t need to look at the holds, I can FEEL the grade." <br>— You, apparently.',
+    'You speedran this like it\'s a V0 slab. <br>The holds had feelings, you know.',
+    'Did you even open your eyes? <br>Asking for the holds.',
+  ][Math.floor(Math.random() * 3)];
+
+  // Speed demon but actually good
+  if (avgTime < 3 && pct >= 80) return [
+    'Either you\'re a route-setter or you have a very suspicious talent. <br>We\'re watching you.',
+    'Fastest fingers in the gym. <br>Your belayer must be terrified.',
+    'You graded these faster than most people chalk up. <br>Respect.',
+  ][Math.floor(Math.random() * 3)];
+
+  // Took their time, zoomed, and nailed it
+  if (zoomCount >= 3 && pct >= 80) return [
+    'A true analyst. You zoomed, you studied, you conquered. <br>The holds respect you.',
+    'You read those routes like a book. <br>A very sweaty, chalky book.',
+    'Certified route-reading nerd. <br>And we mean that as the highest compliment.',
+  ][Math.floor(Math.random() * 3)];
+
+  // Took their time, zoomed, but still wrong
+  if (zoomCount >= 3 && pct < 50) return [
+    'You zoomed into every hold and STILL got it wrong? <br>That takes commitment.',
+    'All that zooming and you saw... nothing? <br>Maybe try climbing them instead.',
+    'You spent more time analyzing than a route-setter on deadline. <br>With less to show for it.',
+  ][Math.floor(Math.random() * 3)];
+
+  // Never zoomed, decent score
+  if (zoomCount === 0 && pct >= 60) return [
+    'Didn\'t even zoom once. <br>You either have eagle eyes or a very big phone.',
+    'No zoom, no problem. <br>You grade by vibes and honestly? It\'s working.',
+    'Pure instinct. No zoom needed. <br>You probably flash V6s "by accident" too.',
+  ][Math.floor(Math.random() * 3)];
+
+  // Never zoomed, bad score
+  if (zoomCount === 0 && pct < 50) return [
+    'Pro tip: the image zooms in. <br>You might want to actually LOOK at the holds next time.',
+    'You didn\'t zoom and you guessed wrong. <br>This is the climbing equivalent of "I didn\'t study."',
+    'Next time try looking at the wall. <br>Just a suggestion.',
+  ][Math.floor(Math.random() * 3)];
+
+  // Perfect score
+  if (pct === 100) return [
+    'Flawless. Either you set these routes or you have a PhD in hold-reading.',
+    '6/6. You are the route whisperer. <br>Holds tremble when you walk into the gym.',
+  ][Math.floor(Math.random() * 2)];
+
+  // Generic decent
+  if (pct >= 60) return [
+    'Not bad! You know your way around a wall. <br>Keep climbing, keep guessing.',
+    'Solid effort. A few more gym sessions and you\'ll be grading for the setters.',
+  ][Math.floor(Math.random() * 2)];
+
+  // Generic bad
+  return [
+    'Grading is hard. Climbing is harder. <br>At least you tried both.',
+    'Don\'t worry, even route setters argue about grades. <br>You\'re in good company.',
+    'The wall doesn\'t judge you. <br>...but we do. Just kidding. Maybe.',
+  ][Math.floor(Math.random() * 3)];
+}
+
+</script>
+</body>
+</html>
