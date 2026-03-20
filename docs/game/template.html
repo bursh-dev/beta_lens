@@ -81,6 +81,20 @@
     border-color: #4caf50; color: #4caf50;
   }
   .choice-btn:disabled { cursor: default; }
+  .sit-btn {
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    border: 2px solid #666; border-radius: 10px;
+    color: #ddd; font-family: 'Courier New', monospace;
+    font-size: 14px; font-weight: bold; padding: 12px 24px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .sit-btn:active { transform: scale(0.96); }
+  .sit-btn.correct { border-color: #4caf50; color: #4caf50; background: linear-gradient(135deg, #1b3a1b, #0d1f0d); }
+  .sit-btn.wrong { border-color: #f44336; color: #f44336; background: linear-gradient(135deg, #3a1b1b, #1f0d0d); }
+  .sit-btn.reveal { border-color: #4caf50; color: #4caf50; }
+  .sit-btn:disabled { cursor: default; }
+  #sit-feedback.correct { color: #4caf50; }
+  #sit-feedback.wrong { color: #f44336; }
   #feedback {
     font-size: 22px; font-weight: bold; height: 30px;
     display: flex; align-items: center; justify-content: center;
@@ -129,6 +143,11 @@
     font-size: 11px; color: #555; text-decoration: none; margin-bottom: 16px;
   }
   .back-link:hover { color: #888; }
+  .game-ver {
+    position: fixed; top: 6px; right: 8px; font-size: 10px;
+    color: rgba(255,255,255,0.25); font-family: 'Courier New', monospace;
+    pointer-events: none; z-index: 100;
+  }
 </style>
 </head>
 <body>
@@ -137,7 +156,7 @@
   <h1>GUESS THE GRADE</h1>
   <div style="font-size:13px; color:#999; margin:20px 24px 0; line-height:1.7; text-align:left;">
     <p>You'll see %%ROUTE_COUNT%% bouldering routes with holds marked on the wall.</p>
-    <p style="margin-top:12px;">Your job? Figure out the grade.</p>
+    <p style="margin-top:12px;">Your job? Guess the grade <em>and</em> whether it's a sit start.</p>
     <p style="margin-top:12px; color:#777;">Some say the grade is in the holds — their size, spacing, how they sit on the wall. Others just guess and hope for the best.</p>
     <p style="margin-top:12px; color:#666; font-size:11px;">We'll remember how you played.</p>
   </div>
@@ -160,6 +179,11 @@
 
   <div id="choices"></div>
   <div id="feedback"></div>
+  <div id="sit-question" style="display:none;">
+    <div style="font-size:13px; color:#888; margin-bottom:8px;">Sit start?</div>
+    <div id="sit-choices" style="display:flex; gap:12px;"></div>
+  </div>
+  <div id="sit-feedback" style="font-size:18px; font-weight:bold; height:26px; display:flex; align-items:center; justify-content:center;"></div>
 </div>
 
 <div id="result-screen">
@@ -173,6 +197,7 @@
 </div>
 
 <a class="back-link" href="../">BetaLens</a>
+<div class="game-ver">%%GAME_VER%%</div>
 
 <script>
 const ROUTES = %%ROUTES_JSON%%;
@@ -183,10 +208,12 @@ let order = [];
 let current = 0;
 let correct = 0;
 let total = 0;
+let sitCorrect = 0;
 let answered = false;
+let sitAnswered = false;
 let roundStart = 0;
 let usedZoom = false;
-let roundStats = []; // { time, zoomed, correct }
+let roundStats = []; // { time, zoomed, gradeCorrect, sitCorrect }
 
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -201,6 +228,7 @@ function startGame() {
   current = 0;
   correct = 0;
   total = 0;
+  sitCorrect = 0;
   roundStats = [];
   document.getElementById('result-screen').style.display = 'none';
   document.getElementById('game-area').style.display = 'flex';
@@ -338,6 +366,10 @@ function showRound() {
   document.getElementById('progress-badge').textContent = (current + 1) + ' of ' + ROUTES.length;
   document.getElementById('feedback').textContent = '';
   document.getElementById('feedback').className = 'feedback';
+  document.getElementById('sit-question').style.display = 'none';
+  document.getElementById('sit-feedback').textContent = '';
+  document.getElementById('sit-feedback').className = '';
+  sitAnswered = false;
   updateScore();
 }
 
@@ -346,14 +378,11 @@ function handleAnswer(chosen, btn) {
   answered = true;
   total++;
 
-  const elapsed = (Date.now() - roundStart) / 1000;
   const route = ROUTES[order[current]];
   const correctRange = route.grade;
-  const isCorrect = chosen === correctRange;
+  const gradeCorrect = chosen === correctRange;
 
-  roundStats.push({ time: elapsed, zoomed: usedZoom, correct: isCorrect });
-
-  if (isCorrect) {
+  if (gradeCorrect) {
     correct++;
     btn.classList.add('correct');
     document.getElementById('feedback').textContent = 'CORRECT! ' + route.grade;
@@ -371,7 +400,53 @@ function handleAnswer(chosen, btn) {
   document.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
   updateScore();
 
-  // Auto-advance after brief pause
+  // Show sit-start question after brief pause
+  setTimeout(function() {
+    showSitQuestion(gradeCorrect);
+  }, 800);
+}
+
+function showSitQuestion(gradeCorrect) {
+  const q = document.getElementById('sit-question');
+  const c = document.getElementById('sit-choices');
+  q.style.display = 'block';
+  c.innerHTML = '';
+  ['SIT START', 'STANDING'].forEach(function(label) {
+    const btn = document.createElement('button');
+    btn.className = 'sit-btn';
+    btn.textContent = label;
+    btn.onclick = function() { handleSitAnswer(label === 'SIT START', btn, gradeCorrect); };
+    c.appendChild(btn);
+  });
+}
+
+function handleSitAnswer(choseSit, btn, gradeCorrect) {
+  if (sitAnswered) return;
+  sitAnswered = true;
+
+  const elapsed = (Date.now() - roundStart) / 1000;
+  const route = ROUTES[order[current]];
+  const isSit = route.sit;
+  const sitOk = choseSit === isSit;
+
+  if (sitOk) {
+    sitCorrect++;
+    btn.classList.add('correct');
+    document.getElementById('sit-feedback').textContent = isSit ? 'YES, SIT START!' : 'RIGHT, STANDING!';
+    document.getElementById('sit-feedback').className = 'correct';
+  } else {
+    btn.classList.add('wrong');
+    document.getElementById('sit-feedback').textContent = isSit ? 'NOPE, SIT START!' : 'NOPE, STANDING!';
+    document.getElementById('sit-feedback').className = 'wrong';
+    document.querySelectorAll('.sit-btn').forEach(b => {
+      if ((b.textContent === 'SIT START') === isSit) b.classList.add('reveal');
+    });
+  }
+
+  document.querySelectorAll('.sit-btn').forEach(b => b.disabled = true);
+  roundStats.push({ time: elapsed, zoomed: usedZoom, gradeCorrect: gradeCorrect, sitCorrect: sitOk });
+
+  // Auto-advance
   setTimeout(function() {
     if (current < ROUTES.length - 1) {
       current++;
@@ -379,7 +454,7 @@ function handleAnswer(chosen, btn) {
     } else {
       showResults();
     }
-  }, 1500);
+  }, 1200);
 }
 
 function showResults() {
@@ -387,19 +462,20 @@ function showResults() {
   const screen = document.getElementById('result-screen');
   screen.style.display = 'block';
 
-  const pct = Math.round((correct / total) * 100);
+  const pct = Math.round(((correct + sitCorrect) / (total * 2)) * 100);
   const avgTime = roundStats.reduce((s, r) => s + r.time, 0) / roundStats.length;
   const zoomCount = roundStats.filter(r => r.zoomed).length;
   const fastGuesses = roundStats.filter(r => r.time < 3).length;
   const totalTime = roundStats.reduce((s, r) => s + r.time, 0);
 
   const scoreEl = document.getElementById('final-score');
-  scoreEl.textContent = correct + '/' + total;
+  scoreEl.textContent = (correct + sitCorrect) + '/' + (total * 2);
   scoreEl.className = 'big-score ' + (pct >= 80 ? 'great' : pct >= 50 ? 'ok' : 'bad');
 
   // Stats line
   const statsEl = document.getElementById('final-stats');
   statsEl.innerHTML =
+    `<div>Grade: ${correct}/${total} &nbsp; Sit start: ${sitCorrect}/${total}</div>` +
     `<div>Total time: ${totalTime.toFixed(1)}s (avg ${avgTime.toFixed(1)}s/route)</div>` +
     `<div>Zoomed in: ${zoomCount}/${total} routes</div>`;
 
@@ -413,7 +489,8 @@ function showResults() {
   ROUTES.forEach(function(r) {
     const item = document.createElement('div');
     item.className = 'gallery-item';
-    item.innerHTML = '<img src="' + r.img + '"><div class="gallery-grade">' + r.grade + '</div>';
+    const sitLabel = r.sit ? ' (sit)' : '';
+    item.innerHTML = '<img src="' + r.img + '"><div class="gallery-grade">' + r.grade + sitLabel + '</div>';
     gallery.appendChild(item);
   });
 }
@@ -522,7 +599,8 @@ function downloadRoutes() {
       ctx.font = 'bold 28px Courier New';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(r.grade, x + thumbSize / 2, y + thumbSize + labelH / 2);
+      const sitLabel = r.sit ? ' (sit)' : '';
+      ctx.fillText(r.grade + sitLabel, x + thumbSize / 2, y + thumbSize + labelH / 2);
 
       loaded++;
       if (loaded === ROUTES.length) {
