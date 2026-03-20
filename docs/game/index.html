@@ -230,7 +230,7 @@
 </div>
 
 <a class="back-link" href="../">BetaLens</a>
-<div class="game-ver">v5</div>
+<div class="game-ver">v6</div>
 
 <script>
 const ROUTES = [
@@ -493,7 +493,6 @@ function handleSitAnswer(choseSit, btn, gradeCorrect) {
 
   document.querySelectorAll('.sit-btn').forEach(b => b.disabled = true);
 
-  const route = ROUTES[order[current]];
   if (route.moves && route.moves.length === 3 && route.moves[0]) {
     // Show crux question
     showCruxQuestion(gradeCorrect, sitOk);
