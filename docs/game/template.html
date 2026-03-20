@@ -105,6 +105,23 @@
     cursor: pointer; letter-spacing: 1px;
   }
   #next-round-btn:active { transform: scale(0.96); }
+  #crux-question { display: none; width: 92vw; max-width: 500px; }
+  #crux-question .section-label { font-size: 14px; color: #aaa; margin-bottom: 10px; text-align: center; font-weight: bold; }
+  #crux-choices { display: flex; gap: 10px; }
+  .crux-btn {
+    flex: 1; padding: 14px 0; border-radius: 10px;
+    font-family: 'Courier New', monospace; font-size: 16px; font-weight: bold;
+    cursor: pointer; border: 2px solid #666; color: #ddd; text-align: center;
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a); transition: all 0.15s;
+  }
+  .crux-btn:active { transform: scale(0.96); }
+  .crux-btn.correct { border-color: #4caf50; color: #4caf50; background: linear-gradient(135deg, #1b3a1b, #0d1f0d); }
+  .crux-btn.wrong { border-color: #f44336; color: #f44336; background: linear-gradient(135deg, #3a1b1b, #1f0d0d); }
+  .crux-btn.reveal { border-color: #4caf50; color: #4caf50; }
+  .crux-btn:disabled { cursor: default; }
+  #crux-feedback { font-size: 20px; font-weight: bold; height: 30px; display: flex; align-items: center; justify-content: center; }
+  #crux-feedback.correct { color: #4caf50; }
+  #crux-feedback.wrong { color: #f44336; }
   #feedback {
     font-size: 22px; font-weight: bold; height: 30px;
     display: flex; align-items: center; justify-content: center;
@@ -166,7 +183,7 @@
   <h1>GUESS THE GRADE</h1>
   <div style="font-size:13px; color:#999; margin:20px 24px 0; line-height:1.7; text-align:left;">
     <p>You'll see %%ROUTE_COUNT%% bouldering routes with holds marked on the wall.</p>
-    <p style="margin-top:12px;">Your job? Guess the grade <em>and</em> whether it's a sit start.</p>
+    <p style="margin-top:12px;">Your job? Guess the grade, whether it's a sit start, and find the crux move.</p>
     <p style="margin-top:12px; color:#777;">Some say the grade is in the holds — their size, spacing, how they sit on the wall. Others just guess and hope for the best.</p>
     <p style="margin-top:12px; color:#666; font-size:11px;">We'll remember how you played.</p>
   </div>
@@ -194,6 +211,11 @@
     <div id="sit-choices" style="display:flex; gap:12px;"></div>
   </div>
   <div id="sit-feedback" style="font-size:20px; font-weight:bold; height:30px; display:flex; align-items:center; justify-content:center;"></div>
+  <div id="crux-question">
+    <div class="section-label">WHICH MOVE IS THE CRUX?</div>
+    <div id="crux-choices"></div>
+  </div>
+  <div id="crux-feedback" style=""></div>
   <button id="next-round-btn" onclick="advanceRound()">NEXT</button>
 </div>
 
@@ -220,11 +242,14 @@ let current = 0;
 let correct = 0;
 let total = 0;
 let sitCorrect = 0;
+let cruxCorrect = 0;
 let answered = false;
 let sitAnswered = false;
+let cruxAnswered = false;
 let roundStart = 0;
 let usedZoom = false;
-let roundStats = []; // { time, zoomed, gradeCorrect, sitCorrect }
+let roundStats = [];
+let moveOrder = []; // shuffled indices for current round's moves
 
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -240,6 +265,7 @@ function startGame() {
   correct = 0;
   total = 0;
   sitCorrect = 0;
+  cruxCorrect = 0;
   roundStats = [];
   document.getElementById('result-screen').style.display = 'none';
   document.getElementById('game-area').style.display = 'flex';
@@ -381,7 +407,12 @@ function showRound() {
   document.getElementById('sit-feedback').textContent = '';
   document.getElementById('sit-feedback').className = '';
   document.getElementById('next-round-btn').style.display = 'none';
+  document.getElementById('crux-question').style.display = 'none';
+  document.getElementById('crux-feedback').textContent = '';
+  document.getElementById('crux-feedback').className = '';
   sitAnswered = false;
+  cruxAnswered = false;
+  moveOrder = [];
   updateScore();
 }
 
@@ -454,9 +485,19 @@ function handleSitAnswer(choseSit, btn, gradeCorrect) {
   }
 
   document.querySelectorAll('.sit-btn').forEach(b => b.disabled = true);
-  roundStats.push({ time: elapsed, zoomed: usedZoom, gradeCorrect: gradeCorrect, sitCorrect: sitOk });
 
-  // Show NEXT button — wait for user
+  const route = ROUTES[order[current]];
+  if (route.moves && route.moves.length === 3 && route.moves[0]) {
+    // Show crux question
+    showCruxQuestion(gradeCorrect, sitOk);
+  } else {
+    // No moves data — skip crux, show NEXT
+    roundStats.push({ time: elapsed, zoomed: usedZoom, gradeCorrect: gradeCorrect, sitCorrect: sitOk, cruxCorrect: null });
+    showNextButton();
+  }
+}
+
+function showNextButton() {
   document.getElementById('next-round-btn').style.display = 'block';
   document.getElementById('next-round-btn').textContent = current < ROUTES.length - 1 ? 'NEXT' : 'SEE RESULTS';
 }
@@ -471,25 +512,163 @@ function advanceRound() {
   }
 }
 
+const MOVE_LINE_COLOR = '#00bcd4';
+
+function drawMovesOnCanvas(route, highlightIdx) {
+  // Draw moves on route canvas
+  const canvas = document.getElementById('route-canvas');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+
+  moveOrder.forEach(function(origIdx, displayIdx) {
+    const m = route.moves[origIdx];
+    if (!m) return;
+    const x1 = m.x1 * w, y1 = m.y1 * h;
+    const x2 = m.x2 * w, y2 = m.y2 * h;
+
+    let color = MOVE_LINE_COLOR;
+    if (highlightIdx !== undefined) {
+      if (origIdx === route.crux) color = '#4caf50'; // correct one = green
+      else if (displayIdx === highlightIdx && origIdx !== route.crux) color = '#f44336'; // wrong pick = red
+      else color = '#555';
+    }
+
+    // Line
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(3, Math.min(w, h) * 0.006);
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    // Endpoints
+    const r = Math.max(5, Math.min(w, h) * 0.012);
+    [{ x: x1, y: y1 }, { x: x2, y: y2 }].forEach(function(p) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+
+    // Number label at midpoint
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    const fontSize = Math.max(14, Math.min(w, h) * 0.03);
+    ctx.font = 'bold ' + fontSize + 'px Courier New';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const label = String(displayIdx + 1);
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.beginPath();
+    ctx.arc(mx, my, tw * 0.9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.fillText(label, mx, my);
+  });
+}
+
+function showCruxQuestion(gradeCorrect, sitOk) {
+  const route = ROUTES[order[current]];
+
+  // Shuffle move display order
+  moveOrder = shuffle([0, 1, 2]);
+
+  // Redraw canvas with moves
+  const canvas = document.getElementById('route-canvas');
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+  img.onload = function() {
+    ctx.drawImage(img, 0, 0);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, 220, 50);
+    drawMovesOnCanvas(route);
+  };
+  img.src = route.img;
+
+  // Build buttons
+  const q = document.getElementById('crux-question');
+  const c = document.getElementById('crux-choices');
+  q.style.display = 'block';
+  c.innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'crux-btn';
+    btn.textContent = 'MOVE ' + (i + 1);
+    btn.style.borderColor = MOVE_LINE_COLOR;
+    btn.style.color = MOVE_LINE_COLOR;
+    btn.onclick = function() { handleCruxAnswer(i, btn, gradeCorrect, sitOk); };
+    c.appendChild(btn);
+  }
+}
+
+function handleCruxAnswer(displayIdx, btn, gradeCorrect, sitOk) {
+  if (cruxAnswered) return;
+  cruxAnswered = true;
+
+  const elapsed = (Date.now() - roundStart) / 1000;
+  const route = ROUTES[order[current]];
+  const chosenOrigIdx = moveOrder[displayIdx];
+  const isCorrect = chosenOrigIdx === route.crux;
+
+  if (isCorrect) {
+    cruxCorrect++;
+    btn.classList.add('correct');
+    document.getElementById('crux-feedback').textContent = 'YES! THAT\'S THE CRUX!';
+    document.getElementById('crux-feedback').className = 'correct';
+  } else {
+    btn.classList.add('wrong');
+    // Reveal correct one
+    const correctDisplayIdx = moveOrder.indexOf(route.crux);
+    document.querySelectorAll('.crux-btn')[correctDisplayIdx].classList.add('reveal');
+    document.getElementById('crux-feedback').textContent = 'NOPE! MOVE ' + (correctDisplayIdx + 1) + ' WAS THE CRUX';
+    document.getElementById('crux-feedback').className = 'wrong';
+  }
+
+  document.querySelectorAll('.crux-btn').forEach(b => b.disabled = true);
+
+  // Redraw with highlights
+  const canvas = document.getElementById('route-canvas');
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+  img.onload = function() {
+    ctx.drawImage(img, 0, 0);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, 220, 50);
+    drawMovesOnCanvas(route, displayIdx);
+  };
+  img.src = route.img;
+
+  roundStats.push({ time: elapsed, zoomed: usedZoom, gradeCorrect: gradeCorrect, sitCorrect: sitOk, cruxCorrect: isCorrect });
+
+  showNextButton();
+}
+
 function showResults() {
   document.getElementById('game-area').style.display = 'none';
   const screen = document.getElementById('result-screen');
   screen.style.display = 'block';
 
-  const pct = Math.round(((correct + sitCorrect) / (total * 2)) * 100);
+  const cruxTotal = roundStats.filter(r => r.cruxCorrect !== null).length;
+  const totalPoints = correct + sitCorrect + cruxCorrect;
+  const maxPoints = total + total + cruxTotal;
+  const pct = maxPoints > 0 ? Math.round((totalPoints / maxPoints) * 100) : 0;
   const avgTime = roundStats.reduce((s, r) => s + r.time, 0) / roundStats.length;
   const zoomCount = roundStats.filter(r => r.zoomed).length;
   const fastGuesses = roundStats.filter(r => r.time < 3).length;
   const totalTime = roundStats.reduce((s, r) => s + r.time, 0);
 
   const scoreEl = document.getElementById('final-score');
-  scoreEl.textContent = (correct + sitCorrect) + '/' + (total * 2);
+  scoreEl.textContent = totalPoints + '/' + maxPoints;
   scoreEl.className = 'big-score ' + (pct >= 80 ? 'great' : pct >= 50 ? 'ok' : 'bad');
 
   // Stats line
   const statsEl = document.getElementById('final-stats');
   statsEl.innerHTML =
-    `<div>Grade: ${correct}/${total} &nbsp; Sit start: ${sitCorrect}/${total}</div>` +
+    `<div>Grade: ${correct}/${total} &nbsp; Sit: ${sitCorrect}/${total}` + (cruxTotal > 0 ? ` &nbsp; Crux: ${cruxCorrect}/${cruxTotal}` : '') + `</div>` +
     `<div>Total time: ${totalTime.toFixed(1)}s (avg ${avgTime.toFixed(1)}s/route)</div>` +
     `<div>Zoomed in: ${zoomCount}/${total} routes</div>`;
 

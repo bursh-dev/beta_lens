@@ -14,7 +14,6 @@
   h1 { font-size: 20px; margin: 14px 0 4px; color: #fff; text-transform: uppercase; letter-spacing: 2px; }
   .subtitle { font-size: 11px; color: #666; margin-bottom: 12px; }
 
-  /* --- Load screen --- */
   #load-screen { padding: 40px 20px; text-align: center; }
   #load-screen label {
     display: inline-block; margin-top: 24px; padding: 14px 36px;
@@ -31,14 +30,10 @@
     padding: 8px 20px; cursor: pointer;
   }
 
-  /* --- Annotate screen --- */
   #annotate-screen { display: none; width: 100%; max-width: 540px; padding: 8px; }
-  .progress-bar {
-    display: flex; gap: 4px; margin-bottom: 8px; justify-content: center;
-  }
+  .progress-bar { display: flex; gap: 4px; margin-bottom: 8px; justify-content: center; }
   .progress-dot {
-    width: 10px; height: 10px; border-radius: 50%; background: #333; border: 1px solid #555;
-    cursor: pointer;
+    width: 10px; height: 10px; border-radius: 50%; background: #333; border: 1px solid #555; cursor: pointer;
   }
   .progress-dot.done { background: #4caf50; border-color: #4caf50; }
   .progress-dot.active { border-color: #fff; box-shadow: 0 0 4px #fff; }
@@ -47,20 +42,19 @@
   #img-container {
     width: 100%; aspect-ratio: 1; background: #222; border-radius: 10px;
     overflow: hidden; border: 2px solid #333; position: relative;
-    touch-action: none;
   }
-  #img-container img {
-    width: 100%; height: 100%; object-fit: contain;
+  #img-container img { width: 100%; height: 100%; object-fit: contain; }
+  #line-canvas {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 3; touch-action: none;
   }
   #route-label {
-    position: absolute; top: 8px; left: 8px;
+    position: absolute; top: 8px; left: 8px; z-index: 4;
     background: rgba(0,0,0,0.7); border-radius: 6px; padding: 4px 10px;
     font-size: 12px; color: #aaa;
   }
-
-  /* --- Sit-start buttons on image --- */
   #sit-buttons {
-    position: absolute; bottom: 10px; left: 8px; z-index: 2;
+    position: absolute; bottom: 10px; left: 8px; z-index: 4;
     display: flex; gap: 8px;
   }
   .sit-opt {
@@ -71,21 +65,12 @@
     transition: all 0.15s;
   }
   .sit-opt:active { transform: scale(0.96); }
-  .sit-opt.selected-sit {
-    border-color: #ff9800; color: #ff9800;
-    background: rgba(255,152,0,0.25);
-  }
-  .sit-opt.selected-stand {
-    border-color: #2196f3; color: #2196f3;
-    background: rgba(33,150,243,0.2);
-  }
+  .sit-opt.selected-sit { border-color: #ff9800; color: #ff9800; background: rgba(255,152,0,0.25); }
+  .sit-opt.selected-stand { border-color: #2196f3; color: #2196f3; background: rgba(33,150,243,0.2); }
 
-  /* --- Grade buttons --- */
-  #grade-section { margin: 12px 0 6px; text-align: center; }
-  #grade-section .section-label { font-size: 11px; color: #666; margin-bottom: 8px; }
-  #grade-buttons {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 6px;
-  }
+  #grade-section { margin: 10px 0 6px; text-align: center; }
+  #grade-section .section-label { font-size: 11px; color: #666; margin-bottom: 6px; }
+  #grade-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 6px; }
   .grade-btn {
     background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
     border: 2px solid #444; border-radius: 8px;
@@ -96,10 +81,24 @@
   .grade-btn:active { transform: scale(0.96); }
   .grade-btn.selected { border-color: #ff8844; color: #ff8844; background: linear-gradient(135deg, #3a2a1a, #1f150d); }
 
-  /* --- Nav + save --- */
-  #nav-row {
-    display: flex; gap: 10px; margin: 14px 0; justify-content: center; align-items: center;
+  /* --- Move drawing --- */
+  #moves-section { margin: 10px 0 6px; text-align: center; }
+  #moves-section .section-label { font-size: 11px; color: #666; margin-bottom: 6px; }
+  #move-buttons { display: flex; gap: 8px; justify-content: center; }
+  .move-btn {
+    flex: 1; padding: 10px 0; border-radius: 8px;
+    font-family: 'Courier New', monospace; font-size: 13px; font-weight: bold;
+    cursor: pointer; border: 2px solid #444; color: #888;
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    transition: all 0.15s; text-align: center;
   }
+  .move-btn:active { transform: scale(0.96); }
+  .move-btn.drawing { border-color: #fff; color: #fff; box-shadow: 0 0 6px rgba(255,255,255,0.3); }
+  .move-btn.has-line { border-color: #4caf50; color: #4caf50; }
+  .move-btn.crux-btn.has-line { border-color: #f44336; color: #f44336; }
+  #draw-hint { font-size: 11px; color: #666; margin-top: 6px; height: 16px; }
+
+  #nav-row { display: flex; gap: 10px; margin: 12px 0; justify-content: center; align-items: center; }
   .nav-btn {
     background: none; border: 1px solid #555; border-radius: 8px;
     color: #aaa; font-family: 'Courier New', monospace; font-size: 20px;
@@ -126,7 +125,6 @@
     cursor: pointer; margin: 10px 0 20px; letter-spacing: 1px;
   }
   #save-btn:active { transform: scale(0.96); }
-  #save-btn:disabled { opacity: 0.3; cursor: default; }
   #status-msg { font-size: 12px; color: #4caf50; height: 20px; margin-bottom: 8px; }
 </style>
 </head>
@@ -134,7 +132,7 @@
 
 <div id="load-screen">
   <h1>ANNOTATE ROUTES</h1>
-  <div class="subtitle">Set grade & sit start for each route image</div>
+  <div class="subtitle">Grade, sit start & crux move for each route</div>
   <label>
     LOAD IMAGES
     <input type="file" id="file-input" accept="image/*" multiple>
@@ -151,6 +149,7 @@
 
   <div id="img-container">
     <img id="route-img">
+    <canvas id="line-canvas"></canvas>
     <div id="route-label"></div>
     <div id="sit-buttons">
       <button class="sit-opt" onclick="selectSit(true)">SIT START</button>
@@ -161,6 +160,16 @@
   <div id="grade-section">
     <div class="section-label">GRADE</div>
     <div id="grade-buttons"></div>
+  </div>
+
+  <div id="moves-section">
+    <div class="section-label">MOVES — tap two points on the image to draw each line</div>
+    <div id="move-buttons">
+      <button class="move-btn crux-btn" onclick="startDrawing(0)">CRUX</button>
+      <button class="move-btn" onclick="startDrawing(1)">FAKE 1</button>
+      <button class="move-btn" onclick="startDrawing(2)">FAKE 2</button>
+    </div>
+    <div id="draw-hint"></div>
   </div>
 
   <div id="nav-row">
@@ -180,15 +189,23 @@
 const ALL_GRADES = [];
 for (let i = 0; i <= 16; i++) ALL_GRADES.push('V' + i);
 
-let routes = []; // { file, name, dataUrl, grade, sit (null=unset, true/false=set) }
+const MOVE_COLORS = ['#f44336', '#888', '#888']; // crux=red, fakes=gray
+const MOVE_LABELS = ['CRUX', 'FAKE 1', 'FAKE 2'];
+
+let routes = []; // { file, name, dataUrl, grade, sit, moves:[{x1,y1,x2,y2}x3], crux:0 }
 let currentIdx = 0;
+let drawingMove = -1; // which move index we're drawing (-1=none)
+let drawFirstPoint = null; // {x, y} in 0-1 coords
 
 // --- File loading ---
 document.getElementById('file-input').addEventListener('change', function(e) {
   const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
   if (!files.length) return;
   files.sort((a, b) => a.name.localeCompare(b.name));
-  routes = files.map(f => ({ file: f, name: f.name, dataUrl: null, grade: null, sit: null }));
+  routes = files.map(f => ({
+    file: f, name: f.name, dataUrl: null, grade: null, sit: null,
+    moves: [null, null, null], crux: 0
+  }));
   loadImages(0);
 });
 
@@ -203,8 +220,12 @@ document.getElementById('json-input').addEventListener('change', function(e) {
       routes = data.map(r => ({
         file: null, name: r.img, dataUrl: null,
         grade: r.grade || null,
-        sit: typeof r.sit === 'boolean' ? r.sit : null
+        sit: typeof r.sit === 'boolean' ? r.sit : null,
+        moves: r.moves ? r.moves.map(m => m ? Object.assign({}, m) : null) : [null, null, null],
+        crux: r.crux || 0
       }));
+      // Pad moves to 3
+      routes.forEach(r => { while (r.moves.length < 3) r.moves.push(null); });
       alert('Now select the image files that match routes.json');
       const inp = document.createElement('input');
       inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
@@ -212,9 +233,7 @@ document.getElementById('json-input').addEventListener('change', function(e) {
         const files = Array.from(inp.files);
         const byName = {};
         files.forEach(f => byName[f.name] = f);
-        routes.forEach(r => {
-          if (byName[r.name]) r.file = byName[r.name];
-        });
+        routes.forEach(r => { if (byName[r.name]) r.file = byName[r.name]; });
         routes = routes.filter(r => r.file);
         if (!routes.length) { alert('No matching images found'); return; }
         loadImages(0);
@@ -227,21 +246,16 @@ document.getElementById('json-input').addEventListener('change', function(e) {
   reader.readAsText(file);
 });
 
-function loadExistingJson() {
-  document.getElementById('json-input').click();
-}
+function loadExistingJson() { document.getElementById('json-input').click(); }
 
 function loadImages(startIdx) {
   let loaded = 0;
-  routes.forEach((r, i) => {
+  routes.forEach(r => {
     const reader = new FileReader();
     reader.onload = function() {
       r.dataUrl = reader.result;
       loaded++;
-      if (loaded === routes.length) {
-        currentIdx = startIdx;
-        showAnnotateScreen();
-      }
+      if (loaded === routes.length) { currentIdx = startIdx; showAnnotateScreen(); }
     };
     reader.readAsDataURL(r.file);
   });
@@ -253,6 +267,7 @@ function showAnnotateScreen() {
   document.getElementById('annotate-screen').style.display = 'block';
   buildGradeButtons();
   buildProgressBar();
+  resizeCanvas();
   showRoute();
 }
 
@@ -280,7 +295,7 @@ function buildProgressBar() {
 }
 
 function isComplete(r) {
-  return r.grade !== null && r.sit !== null;
+  return r.grade !== null && r.sit !== null && r.moves[0] && r.moves[1] && r.moves[2];
 }
 
 function updateProgressBar() {
@@ -288,8 +303,9 @@ function updateProgressBar() {
   dots.forEach((dot, i) => {
     dot.className = 'progress-dot';
     if (i === currentIdx) dot.classList.add('active');
-    if (isComplete(routes[i])) dot.classList.add('done');
-    else if (routes[i].grade !== null || routes[i].sit !== null) dot.classList.add('partial');
+    const r = routes[i];
+    if (isComplete(r)) dot.classList.add('done');
+    else if (r.grade !== null || r.sit !== null || r.moves.some(m => m)) dot.classList.add('partial');
   });
 }
 
@@ -300,6 +316,16 @@ function updateNextButton() {
   document.getElementById('next-btn').style.display = ready ? 'none' : 'inline-flex';
 }
 
+function updateMoveButtons() {
+  const r = routes[currentIdx];
+  const btns = document.querySelectorAll('.move-btn');
+  btns.forEach((btn, i) => {
+    btn.className = 'move-btn' + (i === 0 ? ' crux-btn' : '');
+    if (i === drawingMove) btn.classList.add('drawing');
+    if (r.moves[i]) btn.classList.add('has-line');
+  });
+}
+
 function showRoute() {
   const r = routes[currentIdx];
   document.getElementById('route-img').src = r.dataUrl;
@@ -308,16 +334,19 @@ function showRoute() {
   document.getElementById('prev-btn').disabled = currentIdx === 0;
   document.getElementById('next-btn').disabled = currentIdx === routes.length - 1;
 
-  // Update grade selection
   document.querySelectorAll('.grade-btn').forEach(btn => {
     btn.classList.toggle('selected', btn.textContent === r.grade);
   });
 
-  // Update sit buttons
   const sitBtns = document.querySelectorAll('.sit-opt');
   sitBtns[0].className = 'sit-opt' + (r.sit === true ? ' selected-sit' : '');
   sitBtns[1].className = 'sit-opt' + (r.sit === false ? ' selected-stand' : '');
 
+  drawingMove = -1;
+  drawFirstPoint = null;
+  document.getElementById('draw-hint').textContent = '';
+  updateMoveButtons();
+  drawLines();
   updateProgressBar();
   updateNextButton();
   document.getElementById('status-msg').textContent = '';
@@ -325,9 +354,7 @@ function showRoute() {
 
 function selectGrade(g) {
   routes[currentIdx].grade = g;
-  document.querySelectorAll('.grade-btn').forEach(btn => {
-    btn.classList.toggle('selected', btn.textContent === g);
-  });
+  document.querySelectorAll('.grade-btn').forEach(btn => btn.classList.toggle('selected', btn.textContent === g));
   updateProgressBar();
   updateNextButton();
 }
@@ -342,10 +369,7 @@ function selectSit(isSit) {
 }
 
 function navigateNext() {
-  if (currentIdx < routes.length - 1) {
-    currentIdx++;
-    showRoute();
-  }
+  if (currentIdx < routes.length - 1) { currentIdx++; showRoute(); }
 }
 
 function navigate(dir) {
@@ -353,17 +377,209 @@ function navigate(dir) {
   showRoute();
 }
 
-// Keyboard nav
 document.addEventListener('keydown', function(e) {
   if (e.key === 'ArrowLeft') navigate(-1);
   if (e.key === 'ArrowRight') navigate(1);
+  if (e.key === 'Escape') { drawingMove = -1; drawFirstPoint = null; updateMoveButtons(); document.getElementById('draw-hint').textContent = ''; }
+});
+
+// --- Canvas drawing ---
+function resizeCanvas() {
+  const cont = document.getElementById('img-container');
+  const canvas = document.getElementById('line-canvas');
+  canvas.width = cont.clientWidth;
+  canvas.height = cont.clientHeight;
+}
+window.addEventListener('resize', function() { resizeCanvas(); drawLines(); });
+
+function getImgBounds() {
+  const cont = document.getElementById('img-container');
+  const img = document.getElementById('route-img');
+  const cw = cont.clientWidth, ch = cont.clientHeight;
+  const nw = img.naturalWidth, nh = img.naturalHeight;
+  if (!nw || !nh) return { x: 0, y: 0, w: cw, h: ch };
+  const scale = Math.min(cw / nw, ch / nh);
+  const w = nw * scale, h = nh * scale;
+  return { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
+}
+
+function drawLines() {
+  const canvas = document.getElementById('line-canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const bounds = getImgBounds();
+  const r = routes[currentIdx];
+
+  r.moves.forEach((m, i) => {
+    if (!m) return;
+    const x1 = bounds.x + m.x1 * bounds.w;
+    const y1 = bounds.y + m.y1 * bounds.h;
+    const x2 = bounds.x + m.x2 * bounds.w;
+    const y2 = bounds.y + m.y2 * bounds.h;
+
+    const color = MOVE_COLORS[i];
+
+    // Draw line
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    // Draw endpoints
+    [x1, y1, x2, y2].forEach((_, idx) => {
+      if (idx % 2 !== 0) return;
+      const px = [x1, x2][idx / 2], py = [y1, y2][idx / 2];
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(px, py, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+
+    // Label at midpoint
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    ctx.font = 'bold 11px Courier New';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    const label = MOVE_LABELS[i];
+    const tw = ctx.measureText(label).width;
+    ctx.fillRect(mx - tw / 2 - 4, my - 8, tw + 8, 16);
+    ctx.fillStyle = color;
+    ctx.fillText(label, mx, my);
+  });
+
+  // Draw pending first point
+  if (drawFirstPoint) {
+    const px = bounds.x + drawFirstPoint.x * bounds.w;
+    const py = bounds.y + drawFirstPoint.y * bounds.h;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(px, py, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = MOVE_COLORS[drawingMove] || '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+function startDrawing(moveIdx) {
+  if (drawingMove === moveIdx) {
+    // Cancel
+    drawingMove = -1;
+    drawFirstPoint = null;
+    document.getElementById('draw-hint').textContent = '';
+  } else {
+    drawingMove = moveIdx;
+    drawFirstPoint = null;
+    document.getElementById('draw-hint').textContent = 'Tap the FIRST hold';
+  }
+  updateMoveButtons();
+  drawLines();
+}
+
+document.getElementById('line-canvas').addEventListener('click', function(e) {
+  if (drawingMove < 0) return;
+  const canvas = document.getElementById('line-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  const bounds = getImgBounds();
+
+  // Convert to 0-1 relative to image
+  const px = (cx - bounds.x) / bounds.w;
+  const py = (cy - bounds.y) / bounds.h;
+  if (px < 0 || px > 1 || py < 0 || py > 1) return; // outside image
+
+  if (!drawFirstPoint) {
+    drawFirstPoint = { x: px, y: py };
+    document.getElementById('draw-hint').textContent = 'Tap the SECOND hold';
+    drawLines();
+  } else {
+    routes[currentIdx].moves[drawingMove] = {
+      x1: drawFirstPoint.x, y1: drawFirstPoint.y,
+      x2: px, y2: py
+    };
+    drawFirstPoint = null;
+    const wasDrawing = drawingMove;
+    drawingMove = -1;
+    document.getElementById('draw-hint').textContent = '';
+
+    // Auto-advance to next empty move slot
+    const r = routes[currentIdx];
+    for (let i = 0; i < 3; i++) {
+      const next = (wasDrawing + 1 + i) % 3;
+      if (!r.moves[next]) { startDrawing(next); break; }
+    }
+
+    updateMoveButtons();
+    drawLines();
+    updateProgressBar();
+    updateNextButton();
+  }
+});
+
+// Touch support for canvas
+document.getElementById('line-canvas').addEventListener('touchend', function(e) {
+  if (drawingMove < 0) return;
+  e.preventDefault();
+  const touch = e.changedTouches[0];
+  const canvas = document.getElementById('line-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const cx = touch.clientX - rect.left, cy = touch.clientY - rect.top;
+  const bounds = getImgBounds();
+
+  const px = (cx - bounds.x) / bounds.w;
+  const py = (cy - bounds.y) / bounds.h;
+  if (px < 0 || px > 1 || py < 0 || py > 1) return;
+
+  if (!drawFirstPoint) {
+    drawFirstPoint = { x: px, y: py };
+    document.getElementById('draw-hint').textContent = 'Tap the SECOND hold';
+    drawLines();
+  } else {
+    routes[currentIdx].moves[drawingMove] = {
+      x1: drawFirstPoint.x, y1: drawFirstPoint.y,
+      x2: px, y2: py
+    };
+    drawFirstPoint = null;
+    const wasDrawing = drawingMove;
+    drawingMove = -1;
+    document.getElementById('draw-hint').textContent = '';
+
+    const r = routes[currentIdx];
+    for (let i = 0; i < 3; i++) {
+      const next = (wasDrawing + 1 + i) % 3;
+      if (!r.moves[next]) { startDrawing(next); break; }
+    }
+
+    updateMoveButtons();
+    drawLines();
+    updateProgressBar();
+    updateNextButton();
+  }
+});
+
+// Redraw when image loads
+document.getElementById('route-img').addEventListener('load', function() {
+  resizeCanvas();
+  drawLines();
 });
 
 // --- Save ---
 function saveJson() {
   const incomplete = routes.filter(r => !isComplete(r));
   if (incomplete.length) {
-    document.getElementById('status-msg').textContent = incomplete.length + ' route(s) incomplete (need grade + sit start)!';
+    const r = incomplete[0];
+    let missing = [];
+    if (r.grade === null) missing.push('grade');
+    if (r.sit === null) missing.push('sit start');
+    if (!r.moves[0] || !r.moves[1] || !r.moves[2]) missing.push('moves');
+    document.getElementById('status-msg').textContent = incomplete.length + ' route(s) incomplete — missing: ' + missing.join(', ');
     document.getElementById('status-msg').style.color = '#f44336';
     currentIdx = routes.indexOf(incomplete[0]);
     showRoute();
@@ -373,7 +589,9 @@ function saveJson() {
   const data = routes.map(r => ({
     img: r.name,
     grade: r.grade,
-    sit: r.sit
+    sit: r.sit,
+    moves: r.moves.map(m => ({ x1: +m.x1.toFixed(4), y1: +m.y1.toFixed(4), x2: +m.x2.toFixed(4), y2: +m.y2.toFixed(4) })),
+    crux: 0
   }));
 
   const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' });
