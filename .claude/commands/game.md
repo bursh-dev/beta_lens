@@ -23,7 +23,7 @@ New fields may be added over time — pass them through to the ROUTES array as-i
    - `%%ROUTES_JSON%%` with the ROUTES array
    - `%%GRADES_JSON%%` with the GRADES array
    - `%%ROUTE_COUNT%%` with the number of routes
-   - `%%GAME_VER%%` with current date (YYYY-MM-DD)
+   - `%%GAME_VER%%` — read current version from `docs/game/index.html` (look for `v{number}` in the `game-ver` div), increment by 1. If not found, start at 1.
 
 5. **Write** the result to `docs/game/index.html`.
 
