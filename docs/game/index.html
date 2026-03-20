@@ -230,7 +230,7 @@
 </div>
 
 <a class="back-link" href="../">BetaLens</a>
-<div class="game-ver">v6</div>
+<div class="game-ver">v7</div>
 
 <script>
 const ROUTES = [
@@ -680,7 +680,10 @@ function showResults() {
 
   // Pick a punchline based on behavior
   const msg = document.getElementById('final-msg');
-  msg.innerHTML = getPunchline(pct, avgTime, zoomCount, fastGuesses);
+  const gradePct = total > 0 ? correct / total : 0;
+  const sitPct = total > 0 ? sitCorrect / total : 0;
+  const cruxPct = cruxTotal > 0 ? cruxCorrect / cruxTotal : -1;
+  msg.innerHTML = getPunchline({ pct, avgTime, zoomCount, fastGuesses, gradePct, sitPct, cruxPct, total, correct, sitCorrect, cruxCorrect, cruxTotal });
 
   // Build route gallery
   const gallery = document.getElementById('route-gallery');
@@ -694,67 +697,157 @@ function showResults() {
   });
 }
 
-function getPunchline(pct, avgTime, zoomCount, fastGuesses) {
-  // Speed demon who didn't even look
-  if (avgTime < 2 && pct < 50) return [
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function getPunchline(s) {
+  // Collect matching punchlines, pick one at random
+  const pool = [];
+
+  // === PERFECT === (all correct)
+  if (s.pct === 100) pool.push(
+    'Flawless. You are the wall. <br>The wall is you.',
+    'Are you a route-setter in disguise? <br>Blink twice if you need help.',
+    'Perfect score. <br>Honestly, we didn\'t even code a message for this. Yet here we are.',
+    'You didn\'t miss a single thing. Grade, sit, crux — all of it. <br>We\'re not mad, we\'re impressed.',
+    'The holds just called. <br>They want to know how you read them so well.'
+  );
+
+  // === SPEED DEMON + BAD ===
+  if (s.avgTime < 2 && s.pct < 50) pool.push(
     '"I don\'t need to look at the holds, I can FEEL the grade." <br>— You, apparently.',
     'You speedran this like it\'s a V0 slab. <br>The holds had feelings, you know.',
     'Did you even open your eyes? <br>Asking for the holds.',
-  ][Math.floor(Math.random() * 3)];
+    'That was fast. Wrong, but fast. <br>Speed climbing is a different sport.',
+    'You answered before the image loaded. <br>Bold strategy.'
+  );
 
-  // Speed demon but actually good
-  if (avgTime < 3 && pct >= 80) return [
+  // === SPEED DEMON + GOOD ===
+  if (s.avgTime < 3 && s.pct >= 80) pool.push(
     'Either you\'re a route-setter or you have a very suspicious talent. <br>We\'re watching you.',
     'Fastest fingers in the gym. <br>Your belayer must be terrified.',
     'You graded these faster than most people chalk up. <br>Respect.',
-  ][Math.floor(Math.random() * 3)];
+    'Quick and accurate. <br>You\'re basically a human route-grading algorithm.',
+    'Your reaction time says speedclimber. <br>Your accuracy says route-setter. Which is it?'
+  );
 
-  // Took their time, zoomed, and nailed it
-  if (zoomCount >= 3 && pct >= 80) return [
+  // === ZOOMED + NAILED IT ===
+  if (s.zoomCount >= 3 && s.pct >= 80) pool.push(
     'A true analyst. You zoomed, you studied, you conquered. <br>The holds respect you.',
     'You read those routes like a book. <br>A very sweaty, chalky book.',
     'Certified route-reading nerd. <br>And we mean that as the highest compliment.',
-  ][Math.floor(Math.random() * 3)];
+    'You inspected every pixel. <br>Route-setters wish they had your attention to detail.'
+  );
 
-  // Took their time, zoomed, but still wrong
-  if (zoomCount >= 3 && pct < 50) return [
+  // === ZOOMED + FAILED ===
+  if (s.zoomCount >= 3 && s.pct < 50) pool.push(
     'You zoomed into every hold and STILL got it wrong? <br>That takes commitment.',
     'All that zooming and you saw... nothing? <br>Maybe try climbing them instead.',
     'You spent more time analyzing than a route-setter on deadline. <br>With less to show for it.',
-  ][Math.floor(Math.random() * 3)];
+    'Maximum zoom. Minimum accuracy. <br>A truly unique combination.'
+  );
 
-  // Never zoomed, decent score
-  if (zoomCount === 0 && pct >= 60) return [
+  // === NO ZOOM + DECENT ===
+  if (s.zoomCount === 0 && s.pct >= 60) pool.push(
     'Didn\'t even zoom once. <br>You either have eagle eyes or a very big phone.',
     'No zoom, no problem. <br>You grade by vibes and honestly? It\'s working.',
     'Pure instinct. No zoom needed. <br>You probably flash V6s "by accident" too.',
-  ][Math.floor(Math.random() * 3)];
+    'You speed-scrolled through these like gym beta spray. <br>And somehow nailed it.'
+  );
 
-  // Never zoomed, bad score
-  if (zoomCount === 0 && pct < 50) return [
+  // === NO ZOOM + BAD ===
+  if (s.zoomCount === 0 && s.pct < 50) pool.push(
     'Pro tip: the image zooms in. <br>You might want to actually LOOK at the holds next time.',
     'You didn\'t zoom and you guessed wrong. <br>This is the climbing equivalent of "I didn\'t study."',
     'Next time try looking at the wall. <br>Just a suggestion.',
-  ][Math.floor(Math.random() * 3)];
+    'The pinch-to-zoom feature was RIGHT THERE. <br>It\'s free. It doesn\'t bite.'
+  );
 
-  // Perfect score
-  if (pct === 100) return [
-    'Flawless. Either you set these routes or you have a PhD in hold-reading.',
-    total + '/' + total + '. You are the route whisperer. <br>Holds tremble when you walk into the gym.',
-  ][Math.floor(Math.random() * 2)];
+  // === GRADE ACE, SIT FAIL ===
+  if (s.gradePct >= 0.8 && s.sitPct < 0.4) pool.push(
+    'You know the grades but not the starts? <br>Tell me you skip the first move without telling me.',
+    'Great at grading. Terrible at knowing where to sit. <br>Classic "I\'ll figure it out at the wall" energy.',
+    'You nailed every grade but think everything is standing? <br>Your hamstrings must be very confused.',
+    'Grade: expert. Sit start detection: needs calibration. <br>Do you even look at the bottom of the wall?'
+  );
 
-  // Generic decent
-  if (pct >= 60) return [
+  // === SIT ACE, GRADE FAIL ===
+  if (s.sitPct >= 0.8 && s.gradePct < 0.4) pool.push(
+    'You can spot a sit start from orbit but can\'t tell V4 from V6? <br>Interesting skill set.',
+    'Sit start radar: flawless. Grade radar: offline. <br>You\'re like a climbing savant with one very specific power.',
+    'You know exactly where to sit down. <br>You just don\'t know what happens after that.'
+  );
+
+  // === CRUX ACE ===
+  if (s.cruxPct >= 0.8 && s.cruxTotal >= 3) pool.push(
+    'You found every crux. <br>Your project-reading game is elite.',
+    'Crux detector: fully operational. <br>You probably read sequences before you even pull on.',
+    'You can spot the hard move from a photo. <br>Route-setters want to hire you. Or fear you.',
+    'Finding the crux on sight? <br>That\'s a superpower most climbers would trade a finger for.'
+  );
+
+  // === CRUX ZERO ===
+  if (s.cruxPct === 0 && s.cruxTotal >= 3) pool.push(
+    'You missed every single crux. <br>At least you\'re consistently wrong — that\'s a pattern!',
+    '0 for crux. <br>You\'d walk up to the hardest move and say "this feels chill."',
+    'Your crux detector is broken. <br>Have you tried turning it off and on again?',
+    'You picked every decoy and none of the cruxes. <br>That\'s actually statistically impressive.'
+  );
+
+  // === GRADE ACE, CRUX FAIL ===
+  if (s.gradePct >= 0.8 && s.cruxPct >= 0 && s.cruxPct < 0.3 && s.cruxTotal >= 2) pool.push(
+    'You know the grade but not where the hard part is? <br>"It\'s V6 but I couldn\'t tell you why."',
+    'Perfect grades. Zero crux sense. <br>You grade by reputation, not by reading.',
+    'You: "This is definitely V5." <br>Also you: *points at the jug section* "And THIS is the crux."'
+  );
+
+  // === CRUX ACE, GRADE FAIL ===
+  if (s.cruxPct >= 0.8 && s.cruxTotal >= 2 && s.gradePct < 0.4) pool.push(
+    'You can find the crux but can\'t grade the route? <br>"The hard part is HERE... and the route is... V... something."',
+    'Crux vision: 20/20. Grade vision: legally blind. <br>A fascinating contradiction.',
+    'You spot the hard move instantly but think it\'s V4 when it\'s V6. <br>Confidence without calibration.'
+  );
+
+  // === ALL SIT STARTS WRONG (all guessed standing when sit, or vice versa) ===
+  if (s.sitCorrect === 0 && s.total >= 3) pool.push(
+    'You got every sit start wrong. <br>Do you... do you know what a sit start is?',
+    'Zero sit starts correct. <br>Maybe try starting every route from the floor for a week. For research.',
+    'Your sit start strategy: just pick the opposite of what\'s correct. <br>Every. Single. Time.'
+  );
+
+  // === EVERYTHING BAD ===
+  if (s.gradePct < 0.3 && s.sitPct < 0.3 && s.pct < 30) pool.push(
+    'Grade: wrong. Sit start: wrong. Crux: wrong. <br>But hey, you showed up. That counts for something.',
+    'This might be the worst score we\'ve ever seen. <br>And we mean that with love. Sort of.',
+    'Have you considered that the wall is just a wall to you? <br>No judgment. Okay, a little judgment.',
+    'You guessed everything wrong. <br>Statistically, a coin flip would have done better.'
+  );
+
+  // === EVERYTHING DECENT BUT NOT GREAT ===
+  if (s.pct >= 50 && s.pct < 75 && pool.length === 0) pool.push(
+    'Middle of the pack. <br>Not bad, not great, just... climbing.',
+    'You got enough right to avoid embarrassment. <br>The bar was low but you cleared it.',
+    'Solid C+ performance. <br>Your climbing teacher would say "shows potential."',
+    'Some right, some wrong. <br>Just like everyone arguing about grades at the gym.'
+  );
+
+  // === DECENT OVERALL ===
+  if (s.pct >= 60 && s.pct < 80 && pool.length === 0) pool.push(
     'Not bad! You know your way around a wall. <br>Keep climbing, keep guessing.',
     'Solid effort. A few more gym sessions and you\'ll be grading for the setters.',
-  ][Math.floor(Math.random() * 2)];
+    'You\'re getting there. <br>A few more sessions and you\'ll be dangerous.',
+    'Respectable. Like a V4 climber who claims V5. <br>We see you.'
+  );
 
-  // Generic bad
-  return [
+  // === FALLBACK (always add some generics) ===
+  if (pool.length === 0) pool.push(
     'Grading is hard. Climbing is harder. <br>At least you tried both.',
     'Don\'t worry, even route setters argue about grades. <br>You\'re in good company.',
     'The wall doesn\'t judge you. <br>...but we do. Just kidding. Maybe.',
-  ][Math.floor(Math.random() * 3)];
+    'Some you win, some you whiff. <br>That\'s climbing. And also this game.',
+    'You gave it a shot. <br>The holds appreciate your effort, if not your accuracy.'
+  );
+
+  return pick(pool);
 }
 
 function downloadRoutes() {
