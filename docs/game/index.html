@@ -51,6 +51,12 @@
     position: absolute; bottom: 4px; left: 0; width: 100%; text-align: center;
     color: #555; font-size: 10px; pointer-events: none; z-index: 1;
   }
+  .progress-badge {
+    position: absolute; top: 8px; right: 8px; z-index: 2;
+    background: rgba(0,0,0,0.7); border: 1px solid #555; border-radius: 6px;
+    padding: 4px 10px; font-size: 13px; color: #aaa; pointer-events: none;
+    font-family: 'Courier New', monospace; letter-spacing: 1px;
+  }
   #choices {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 10px;
     margin: 14px 0; width: 92vw; max-width: 500px;
@@ -89,12 +95,34 @@
   #result-screen .big-score.great { color: #4caf50; }
   #result-screen .big-score.ok { color: #ff9800; }
   #result-screen .big-score.bad { color: #f44336; }
-  #play-again {
+  #play-again, #download-btn {
     background: linear-gradient(135deg, #333, #222);
     border: 2px solid #666; border-radius: 10px;
     color: #fff; font-family: 'Courier New', monospace;
     font-size: 16px; padding: 14px 40px; margin-top: 20px;
     cursor: pointer;
+  }
+  #download-btn {
+    border-color: #2196f3; color: #2196f3; font-size: 14px;
+    padding: 12px 32px;
+  }
+  #download-btn:active { transform: scale(0.96); }
+  #route-gallery {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px;
+    width: 92vw; max-width: 500px; margin-top: 16px;
+  }
+  .gallery-item {
+    position: relative; border-radius: 8px; overflow: hidden;
+    border: 1px solid #333; aspect-ratio: 1;
+  }
+  .gallery-item img {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  .gallery-grade {
+    position: absolute; bottom: 0; left: 0; width: 100%;
+    background: rgba(0,0,0,0.75); color: #ff8844; font-weight: bold;
+    font-family: 'Courier New', monospace; font-size: 13px;
+    text-align: center; padding: 3px 0;
   }
   #game-area { display: flex; flex-direction: column; align-items: center; }
   .back-link {
@@ -126,6 +154,7 @@
 
   <div id="image-container">
     <canvas id="route-canvas"></canvas>
+    <div class="progress-badge" id="progress-badge"></div>
     <div class="zoom-hint">pinch to zoom</div>
   </div>
 
@@ -138,6 +167,8 @@
   <div class="big-score" id="final-score"></div>
   <div id="final-stats" style="font-size:12px; color:#888; margin-bottom:16px; line-height:1.8;"></div>
   <div id="final-msg" style="font-size:14px; line-height:1.6; padding:0 16px; color:#ccc;"></div>
+  <div id="route-gallery"></div>
+  <button id="download-btn" onclick="downloadRoutes()">SAVE ALL ROUTES</button>
   <button id="play-again" onclick="startGame()">PLAY AGAIN</button>
 </div>
 
@@ -311,6 +342,7 @@ function showRound() {
     choices.appendChild(btn);
   }
 
+  document.getElementById('progress-badge').textContent = (current + 1) + ' of ' + ROUTES.length;
   document.getElementById('feedback').textContent = '';
   document.getElementById('feedback').className = 'feedback';
   updateScore();
@@ -381,6 +413,16 @@ function showResults() {
   // Pick a punchline based on behavior
   const msg = document.getElementById('final-msg');
   msg.innerHTML = getPunchline(pct, avgTime, zoomCount, fastGuesses);
+
+  // Build route gallery
+  const gallery = document.getElementById('route-gallery');
+  gallery.innerHTML = '';
+  ROUTES.forEach(function(r) {
+    const item = document.createElement('div');
+    item.className = 'gallery-item';
+    item.innerHTML = '<img src="' + r.img + '"><div class="gallery-grade">' + r.grade + '</div>';
+    gallery.appendChild(item);
+  });
 }
 
 function getPunchline(pct, avgTime, zoomCount, fastGuesses) {
@@ -444,6 +486,61 @@ function getPunchline(pct, avgTime, zoomCount, fastGuesses) {
     'Don\'t worry, even route setters argue about grades. <br>You\'re in good company.',
     'The wall doesn\'t judge you. <br>...but we do. Just kidding. Maybe.',
   ][Math.floor(Math.random() * 3)];
+}
+
+function downloadRoutes() {
+  const cols = Math.min(3, ROUTES.length);
+  const rows = Math.ceil(ROUTES.length / cols);
+  const thumbSize = 400;
+  const labelH = 48;
+  const pad = 8;
+  const cw = cols * thumbSize + (cols + 1) * pad;
+  const ch = rows * (thumbSize + labelH) + (rows + 1) * pad;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = cw;
+  canvas.height = ch;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, cw, ch);
+
+  let loaded = 0;
+  ROUTES.forEach(function(r, i) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function() {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = pad + col * (thumbSize + pad);
+      const y = pad + row * (thumbSize + labelH + pad);
+
+      // Draw image fitted in square
+      const scale = Math.min(thumbSize / img.width, thumbSize / img.height);
+      const dw = img.width * scale;
+      const dh = img.height * scale;
+      ctx.fillStyle = '#222';
+      ctx.fillRect(x, y, thumbSize, thumbSize);
+      ctx.drawImage(img, x + (thumbSize - dw) / 2, y + (thumbSize - dh) / 2, dw, dh);
+
+      // Draw grade label
+      ctx.fillStyle = '#000';
+      ctx.fillRect(x, y + thumbSize, thumbSize, labelH);
+      ctx.fillStyle = '#ff8844';
+      ctx.font = 'bold 28px Courier New';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(r.grade, x + thumbSize / 2, y + thumbSize + labelH / 2);
+
+      loaded++;
+      if (loaded === ROUTES.length) {
+        const link = document.createElement('a');
+        link.download = 'routes.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }
+    };
+    img.src = r.img;
+  });
 }
 
 </script>
