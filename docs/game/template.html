@@ -52,7 +52,7 @@
     color: #555; font-size: 10px; pointer-events: none; z-index: 1;
   }
   #choices {
-    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 10px;
     margin: 14px 0; width: 92vw; max-width: 500px;
   }
   .choice-btn {
@@ -422,7 +422,7 @@ function getPunchline(pct, avgTime, zoomCount, fastGuesses) {
   // Perfect score
   if (pct === 100) return [
     'Flawless. Either you set these routes or you have a PhD in hold-reading.',
-    '6/6. You are the route whisperer. <br>Holds tremble when you walk into the gym.',
+    total + '/' + total + '. You are the route whisperer. <br>Holds tremble when you walk into the gym.',
   ][Math.floor(Math.random() * 2)];
 
   // Generic decent
