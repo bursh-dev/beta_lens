@@ -85,8 +85,9 @@
     background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
     border: 2px solid #666; border-radius: 10px;
     color: #ddd; font-family: 'Courier New', monospace;
-    font-size: 14px; font-weight: bold; padding: 12px 24px;
+    font-size: 16px; font-weight: bold; padding: 14px 28px;
     cursor: pointer; transition: all 0.15s;
+    flex: 1; text-align: center;
   }
   .sit-btn:active { transform: scale(0.96); }
   .sit-btn.correct { border-color: #4caf50; color: #4caf50; background: linear-gradient(135deg, #1b3a1b, #0d1f0d); }
@@ -95,6 +96,15 @@
   .sit-btn:disabled { cursor: default; }
   #sit-feedback.correct { color: #4caf50; }
   #sit-feedback.wrong { color: #f44336; }
+  #next-round-btn {
+    display: none; margin: 10px 0;
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    border: 2px solid #4caf50; border-radius: 10px;
+    color: #4caf50; font-family: 'Courier New', monospace;
+    font-size: 16px; font-weight: bold; padding: 14px 40px;
+    cursor: pointer; letter-spacing: 1px;
+  }
+  #next-round-btn:active { transform: scale(0.96); }
   #feedback {
     font-size: 22px; font-weight: bold; height: 30px;
     display: flex; align-items: center; justify-content: center;
@@ -179,11 +189,12 @@
 
   <div id="choices"></div>
   <div id="feedback"></div>
-  <div id="sit-question" style="display:none;">
-    <div style="font-size:13px; color:#888; margin-bottom:8px;">Sit start?</div>
+  <div id="sit-question" style="display:none; width:92vw; max-width:500px;">
+    <div style="font-size:14px; color:#aaa; margin-bottom:10px; text-align:center; font-weight:bold;">SIT START?</div>
     <div id="sit-choices" style="display:flex; gap:12px;"></div>
   </div>
-  <div id="sit-feedback" style="font-size:18px; font-weight:bold; height:26px; display:flex; align-items:center; justify-content:center;"></div>
+  <div id="sit-feedback" style="font-size:20px; font-weight:bold; height:30px; display:flex; align-items:center; justify-content:center;"></div>
+  <button id="next-round-btn" onclick="advanceRound()">NEXT</button>
 </div>
 
 <div id="result-screen">
@@ -197,15 +208,15 @@
 </div>
 
 <a class="back-link" href="../">BetaLens</a>
-<div class="game-ver">v2</div>
+<div class="game-ver">v3</div>
 
 <script>
 const ROUTES = [
   { img: 'images/route_1.jpg', grade: 'V4', sit: false },
-  { img: 'images/route_2.jpg', grade: 'V4', sit: false },
+  { img: 'images/route_2.jpg', grade: 'V4', sit: true },
   { img: 'images/route_3.jpg', grade: 'V5', sit: false },
-  { img: 'images/route_4.jpg', grade: 'V6', sit: false },
-  { img: 'images/route_5.jpg', grade: 'V6', sit: false },
+  { img: 'images/route_4.jpg', grade: 'V6', sit: true },
+  { img: 'images/route_5.jpg', grade: 'V5', sit: false },
   { img: 'images/route_6.jpg', grade: 'V6', sit: false },
 ];
 
@@ -376,6 +387,7 @@ function showRound() {
   document.getElementById('sit-question').style.display = 'none';
   document.getElementById('sit-feedback').textContent = '';
   document.getElementById('sit-feedback').className = '';
+  document.getElementById('next-round-btn').style.display = 'none';
   sitAnswered = false;
   updateScore();
 }
@@ -407,10 +419,8 @@ function handleAnswer(chosen, btn) {
   document.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
   updateScore();
 
-  // Show sit-start question after brief pause
-  setTimeout(function() {
-    showSitQuestion(gradeCorrect);
-  }, 800);
+  // Show sit-start question immediately
+  showSitQuestion(gradeCorrect);
 }
 
 function showSitQuestion(gradeCorrect) {
@@ -453,15 +463,19 @@ function handleSitAnswer(choseSit, btn, gradeCorrect) {
   document.querySelectorAll('.sit-btn').forEach(b => b.disabled = true);
   roundStats.push({ time: elapsed, zoomed: usedZoom, gradeCorrect: gradeCorrect, sitCorrect: sitOk });
 
-  // Auto-advance
-  setTimeout(function() {
-    if (current < ROUTES.length - 1) {
-      current++;
-      showRound();
-    } else {
-      showResults();
-    }
-  }, 1200);
+  // Show NEXT button — wait for user
+  document.getElementById('next-round-btn').style.display = 'block';
+  document.getElementById('next-round-btn').textContent = current < ROUTES.length - 1 ? 'NEXT' : 'SEE RESULTS';
+}
+
+function advanceRound() {
+  document.getElementById('next-round-btn').style.display = 'none';
+  if (current < ROUTES.length - 1) {
+    current++;
+    showRound();
+  } else {
+    showResults();
+  }
 }
 
 function showResults() {

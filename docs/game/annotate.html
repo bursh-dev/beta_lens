@@ -58,24 +58,27 @@
     font-size: 12px; color: #aaa;
   }
 
-  /* --- Sit-start toggle --- */
-  #sit-toggle {
-    position: absolute; bottom: 12px; left: 8px; z-index: 2;
-    display: flex; align-items: center; gap: 6px;
-    background: rgba(0,0,0,0.45); border-radius: 8px; padding: 6px 10px;
-    cursor: pointer; border: 1px solid transparent;
+  /* --- Sit-start buttons on image --- */
+  #sit-buttons {
+    position: absolute; bottom: 10px; left: 8px; z-index: 2;
+    display: flex; gap: 8px;
+  }
+  .sit-opt {
+    padding: 10px 16px; border-radius: 10px; font-family: 'Courier New', monospace;
+    font-size: 14px; font-weight: bold; cursor: pointer;
+    border: 2px solid #777; color: #ccc;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(2px);
     transition: all 0.15s;
   }
-  #sit-toggle:active { transform: scale(0.96); }
-  #sit-toggle.active { border-color: #ff9800; background: rgba(255,152,0,0.2); }
-  #sit-toggle .sit-icon {
-    width: 20px; height: 20px; border-radius: 4px;
-    border: 2px solid #666; display: flex; align-items: center; justify-content: center;
-    font-size: 11px; color: #666; transition: all 0.15s;
+  .sit-opt:active { transform: scale(0.96); }
+  .sit-opt.selected-sit {
+    border-color: #ff9800; color: #ff9800;
+    background: rgba(255,152,0,0.25);
   }
-  #sit-toggle.active .sit-icon { border-color: #ff9800; color: #ff9800; background: rgba(255,152,0,0.15); }
-  #sit-toggle .sit-label { font-size: 11px; color: #777; transition: color 0.15s; }
-  #sit-toggle.active .sit-label { color: #ff9800; }
+  .sit-opt.selected-stand {
+    border-color: #2196f3; color: #2196f3;
+    background: rgba(33,150,243,0.2);
+  }
 
   /* --- Grade buttons --- */
   #grade-section { margin: 12px 0 6px; text-align: center; }
@@ -106,6 +109,14 @@
   .nav-btn:disabled { opacity: 0.2; cursor: default; }
   .nav-btn:active:not(:disabled) { background: #333; }
   #nav-label { font-size: 14px; color: #888; min-width: 80px; text-align: center; }
+  #next-ready {
+    background: linear-gradient(135deg, #1b3a1b, #0d1f0d);
+    border: 2px solid #4caf50; border-radius: 10px;
+    color: #4caf50; font-family: 'Courier New', monospace;
+    font-size: 15px; font-weight: bold; padding: 10px 32px;
+    cursor: pointer; letter-spacing: 1px; display: none;
+  }
+  #next-ready:active { transform: scale(0.96); }
 
   #save-btn {
     background: linear-gradient(135deg, #1b3a1b, #0d1f0d);
@@ -141,9 +152,9 @@
   <div id="img-container">
     <img id="route-img">
     <div id="route-label"></div>
-    <div id="sit-toggle" onclick="toggleSit()">
-      <div class="sit-icon">S</div>
-      <div class="sit-label">SIT START</div>
+    <div id="sit-buttons">
+      <button class="sit-opt" onclick="selectSit(true)">SIT START</button>
+      <button class="sit-opt" onclick="selectSit(false)">STANDING</button>
     </div>
   </div>
 
@@ -155,6 +166,7 @@
   <div id="nav-row">
     <button class="nav-btn" id="prev-btn" onclick="navigate(-1)">&larr;</button>
     <div id="nav-label"></div>
+    <button id="next-ready" onclick="navigateNext()">NEXT &rarr;</button>
     <button class="nav-btn" id="next-btn" onclick="navigate(1)">&rarr;</button>
   </div>
 
@@ -168,7 +180,7 @@
 const ALL_GRADES = [];
 for (let i = 0; i <= 16; i++) ALL_GRADES.push('V' + i);
 
-let routes = []; // { file, name, dataUrl, grade, sit }
+let routes = []; // { file, name, dataUrl, grade, sit (null=unset, true/false=set) }
 let currentIdx = 0;
 
 // --- File loading ---
@@ -176,7 +188,7 @@ document.getElementById('file-input').addEventListener('change', function(e) {
   const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
   if (!files.length) return;
   files.sort((a, b) => a.name.localeCompare(b.name));
-  routes = files.map(f => ({ file: f, name: f.name, dataUrl: null, grade: null, sit: false }));
+  routes = files.map(f => ({ file: f, name: f.name, dataUrl: null, grade: null, sit: null }));
   loadImages(0);
 });
 
@@ -188,12 +200,11 @@ document.getElementById('json-input').addEventListener('change', function(e) {
     try {
       const data = JSON.parse(reader.result);
       if (!Array.isArray(data)) throw new Error('not an array');
-      // Ask user to also load the images
       routes = data.map(r => ({
         file: null, name: r.img, dataUrl: null,
-        grade: r.grade || null, sit: !!r.sit
+        grade: r.grade || null,
+        sit: typeof r.sit === 'boolean' ? r.sit : null
       }));
-      // Prompt for images
       alert('Now select the image files that match routes.json');
       const inp = document.createElement('input');
       inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
@@ -204,7 +215,6 @@ document.getElementById('json-input').addEventListener('change', function(e) {
         routes.forEach(r => {
           if (byName[r.name]) r.file = byName[r.name];
         });
-        // Remove routes without matching files
         routes = routes.filter(r => r.file);
         if (!routes.length) { alert('No matching images found'); return; }
         loadImages(0);
@@ -269,20 +279,31 @@ function buildProgressBar() {
   });
 }
 
+function isComplete(r) {
+  return r.grade !== null && r.sit !== null;
+}
+
 function updateProgressBar() {
   const dots = document.querySelectorAll('.progress-dot');
   dots.forEach((dot, i) => {
     dot.className = 'progress-dot';
     if (i === currentIdx) dot.classList.add('active');
-    if (routes[i].grade) dot.classList.add('done');
-    else if (routes[i].sit) dot.classList.add('partial');
+    if (isComplete(routes[i])) dot.classList.add('done');
+    else if (routes[i].grade !== null || routes[i].sit !== null) dot.classList.add('partial');
   });
+}
+
+function updateNextButton() {
+  const r = routes[currentIdx];
+  const ready = isComplete(r) && currentIdx < routes.length - 1;
+  document.getElementById('next-ready').style.display = ready ? 'inline-block' : 'none';
+  document.getElementById('next-btn').style.display = ready ? 'none' : 'inline-flex';
 }
 
 function showRoute() {
   const r = routes[currentIdx];
   document.getElementById('route-img').src = r.dataUrl;
-  document.getElementById('route-label').textContent = r.name;
+  document.getElementById('route-label').textContent = (currentIdx + 1) + ' / ' + routes.length + '  ' + r.name;
   document.getElementById('nav-label').textContent = (currentIdx + 1) + ' / ' + routes.length;
   document.getElementById('prev-btn').disabled = currentIdx === 0;
   document.getElementById('next-btn').disabled = currentIdx === routes.length - 1;
@@ -292,11 +313,13 @@ function showRoute() {
     btn.classList.toggle('selected', btn.textContent === r.grade);
   });
 
-  // Update sit toggle
-  const toggle = document.getElementById('sit-toggle');
-  toggle.classList.toggle('active', r.sit);
+  // Update sit buttons
+  const sitBtns = document.querySelectorAll('.sit-opt');
+  sitBtns[0].className = 'sit-opt' + (r.sit === true ? ' selected-sit' : '');
+  sitBtns[1].className = 'sit-opt' + (r.sit === false ? ' selected-stand' : '');
 
   updateProgressBar();
+  updateNextButton();
   document.getElementById('status-msg').textContent = '';
 }
 
@@ -306,46 +329,29 @@ function selectGrade(g) {
     btn.classList.toggle('selected', btn.textContent === g);
   });
   updateProgressBar();
-
-  // Auto-advance to next unannotated route
-  if (currentIdx < routes.length - 1) {
-    setTimeout(function() {
-      // Find next route without grade
-      let next = -1;
-      for (let i = currentIdx + 1; i < routes.length; i++) {
-        if (!routes[i].grade) { next = i; break; }
-      }
-      if (next === -1 && currentIdx < routes.length - 1) next = currentIdx + 1;
-      if (next !== -1) { currentIdx = next; showRoute(); }
-    }, 300);
-  }
+  updateNextButton();
 }
 
-function toggleSit() {
-  routes[currentIdx].sit = !routes[currentIdx].sit;
-  document.getElementById('sit-toggle').classList.toggle('active', routes[currentIdx].sit);
+function selectSit(isSit) {
+  routes[currentIdx].sit = isSit;
+  const sitBtns = document.querySelectorAll('.sit-opt');
+  sitBtns[0].className = 'sit-opt' + (isSit ? ' selected-sit' : '');
+  sitBtns[1].className = 'sit-opt' + (!isSit ? ' selected-stand' : '');
   updateProgressBar();
+  updateNextButton();
+}
+
+function navigateNext() {
+  if (currentIdx < routes.length - 1) {
+    currentIdx++;
+    showRoute();
+  }
 }
 
 function navigate(dir) {
   currentIdx = Math.max(0, Math.min(routes.length - 1, currentIdx + dir));
   showRoute();
 }
-
-// Swipe navigation
-(function() {
-  let startX = 0;
-  const el = document.getElementById('img-container');
-  el.addEventListener('touchstart', function(e) {
-    if (e.touches.length === 1) startX = e.touches[0].clientX;
-  });
-  el.addEventListener('touchend', function(e) {
-    if (e.changedTouches.length === 1) {
-      const dx = e.changedTouches[0].clientX - startX;
-      if (Math.abs(dx) > 60) navigate(dx < 0 ? 1 : -1);
-    }
-  });
-})();
 
 // Keyboard nav
 document.addEventListener('keydown', function(e) {
@@ -355,12 +361,11 @@ document.addEventListener('keydown', function(e) {
 
 // --- Save ---
 function saveJson() {
-  const missing = routes.filter(r => !r.grade);
-  if (missing.length) {
-    document.getElementById('status-msg').textContent = missing.length + ' route(s) missing grade!';
+  const incomplete = routes.filter(r => !isComplete(r));
+  if (incomplete.length) {
+    document.getElementById('status-msg').textContent = incomplete.length + ' route(s) incomplete (need grade + sit start)!';
     document.getElementById('status-msg').style.color = '#f44336';
-    // Jump to first missing
-    currentIdx = routes.indexOf(missing[0]);
+    currentIdx = routes.indexOf(incomplete[0]);
     showRoute();
     return;
   }

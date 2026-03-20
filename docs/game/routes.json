@@ -1,8 +1,32 @@
 [
-  { "img": "route_1.jpg", "grade": "V4", "sit": false },
-  { "img": "route_2.jpg", "grade": "V4", "sit": false },
-  { "img": "route_3.jpg", "grade": "V5", "sit": false },
-  { "img": "route_4.jpg", "grade": "V6", "sit": false },
-  { "img": "route_5.jpg", "grade": "V6", "sit": false },
-  { "img": "route_6.jpg", "grade": "V6", "sit": false }
+  {
+    "img": "route_1.jpg",
+    "grade": "V4",
+    "sit": false
+  },
+  {
+    "img": "route_2.jpg",
+    "grade": "V4",
+    "sit": true
+  },
+  {
+    "img": "route_3.jpg",
+    "grade": "V5",
+    "sit": false
+  },
+  {
+    "img": "route_4.jpg",
+    "grade": "V6",
+    "sit": true
+  },
+  {
+    "img": "route_5.jpg",
+    "grade": "V5",
+    "sit": false
+  },
+  {
+    "img": "route_6.jpg",
+    "grade": "V6",
+    "sit": false
+  }
 ]
