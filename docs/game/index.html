@@ -171,8 +171,8 @@
   }
   .back-link:hover { color: #888; }
   .game-ver {
-    position: fixed; top: 6px; right: 8px; font-size: 10px;
-    color: rgba(255,255,255,0.25); font-family: 'Courier New', monospace;
+    position: fixed; top: 6px; right: 8px; font-size: 13px;
+    color: rgba(255,255,255,0.6); font-family: 'Courier New', monospace;
     pointer-events: none; z-index: 100;
   }
 </style>
@@ -230,16 +230,16 @@
 </div>
 
 <a class="back-link" href="../">BetaLens</a>
-<div class="game-ver">v4</div>
+<div class="game-ver">v5</div>
 
 <script>
 const ROUTES = [
-  { img: 'images/route_1.jpg', grade: 'V4', sit: false },
-  { img: 'images/route_2.jpg', grade: 'V4', sit: true },
-  { img: 'images/route_3.jpg', grade: 'V5', sit: false },
-  { img: 'images/route_4.jpg', grade: 'V6', sit: true },
-  { img: 'images/route_5.jpg', grade: 'V5', sit: false },
-  { img: 'images/route_6.jpg', grade: 'V6', sit: false },
+  { img: 'images/route_1.jpg', grade: 'V5', sit: true, moves: [{x1:0.5415,y1:0.6246,x2:0.5627,y2:0.5169}, {x1:0.5588,y1:0.5112,x2:0.4223,y2:0.3592}, {x1:0.4281,y1:0.2612,x2:0.1704,y2:0.2842}], crux: 0 },
+  { img: 'images/route_2.jpg', grade: 'V4', sit: true, moves: [{x1:0.4992,y1:0.5035,x2:0.6204,y2:0.3977}, {x1:0.4108,y1:0.74,x2:0.4877,y2:0.5073}, {x1:0.7012,y1:0.2958,x2:0.6569,y2:0.1631}], crux: 0 },
+  { img: 'images/route_3.jpg', grade: 'V5', sit: false, moves: [{x1:0.4185,y1:0.5208,x2:0.5338,y2:0.3419}, {x1:0.5896,y1:0.6362,x2:0.4088,y2:0.6323}, {x1:0.3858,y1:0.3054,x2:0.3242,y2:0.1727}], crux: 0 },
+  { img: 'images/route_4.jpg', grade: 'V6', sit: true, moves: [{x1:0.505,y1:0.3958,x2:0.5646,y2:0.2323}, {x1:0.4377,y1:0.7419,x2:0.3915,y2:0.5765}, {x1:0.3935,y1:0.5765,x2:0.5627,y2:0.5342}], crux: 0 },
+  { img: 'images/route_5.jpg', grade: 'V5', sit: false, moves: [{x1:0.7108,y1:0.4919,x2:0.6838,y2:0.3477}, {x1:0.2262,y1:0.5073,x2:0.3704,y2:0.465}, {x1:0.5781,y1:0.5438,x2:0.7185,y2:0.4919}], crux: 0 },
+  { img: 'images/route_6.jpg', grade: 'V6', sit: false, moves: [{x1:0.5377,y1:0.2862,x2:0.6069,y2:0.1323}, {x1:0.43,y1:0.6708,x2:0.5012,y2:0.4919}, {x1:0.5435,y1:0.415,x2:0.5358,y2:0.2823}], crux: 0 },
 ];
 
 const GRADES = ['V4', 'V5', 'V6'];
