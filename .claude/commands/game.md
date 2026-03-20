@@ -1,33 +1,35 @@
 Regenerate the Guess the Grade game and push it live.
 
-## Image naming convention
+## Data source
 
-- `V{grade}_{name}.jpg` — standing start (e.g. `V4_crimps.jpg`)
-- `V{grade}_{name}_sit.jpg` — sit start (e.g. `V5_arete_sit.jpg`)
+All route metadata lives in `docs/game/routes.json`. Images live in `docs/game/images/`.
 
-The grade is everything before the first `_`. Sit start is detected by `_sit` before the file extension.
+The JSON is an array of objects. Current fields:
+- `img` (string, required) — filename in `images/` folder
+- `grade` (string, required) — V-grade like "V4", "V6"
+- `sit` (boolean, required) — true if sit start
+
+New fields may be added over time — pass them through to the ROUTES array as-is.
 
 ## Steps
 
-1. **Scan images**: List all `.jpg` and `.png` files in `docs/game/images/`. Extract grade and sit-start from filename.
+1. **Read** `docs/game/routes.json`. Validate every entry has `img` and `grade`. Check each `img` file exists in `docs/game/images/`.
 
-2. **Validate**: If no images found or any filename doesn't match the `V{number}_*` pattern, stop and tell the user.
+2. **Build ROUTES array**: Convert the JSON into a JS array literal for embedding in HTML. Format each entry on its own line with 2-space indent, preserving all fields.
 
-3. **Build ROUTES array**: Create a JSON array of `{ img: 'images/filename.jpg', grade: 'V5', sit: true }` for each image, sorted by filename. `sit` is `true` if filename contains `_sit` before the extension, `false` otherwise.
+3. **Build GRADES array**: Collect unique grades, sort by numeric value (V4 < V5 < V6).
 
-4. **Build GRADES array**: Collect the unique grades from all images, sort them by numeric value (V4 < V5 < V6), output as a JSON array of strings.
-
-5. **Generate game HTML**: Read `docs/game/template.html` and replace:
-   - `%%ROUTES_JSON%%` with the ROUTES array (formatted on multiple lines, 2-space indent)
+4. **Generate game HTML**: Read `docs/game/template.html` and replace:
+   - `%%ROUTES_JSON%%` with the ROUTES array
    - `%%GRADES_JSON%%` with the GRADES array
    - `%%ROUTE_COUNT%%` with the number of routes
-   - `%%GAME_VER%%` with current date as version (YYYY-MM-DD)
+   - `%%GAME_VER%%` with current date (YYYY-MM-DD)
 
-6. **Write** the result to `docs/game/index.html`.
+5. **Write** the result to `docs/game/index.html`.
 
-7. **Commit and push**:
-   - Stage `docs/game/index.html`, `docs/game/template.html`, and `docs/game/images/`
+6. **Commit and push**:
+   - Stage `docs/game/` (index.html, routes.json, images/)
    - Commit with message: `Game: update Guess the Grade routes`
    - Push to remote
 
-8. Report what was generated: how many routes, which grades, how many sit starts, and the live URL `https://bursh-dev.github.io/beta_lens/game/`
+7. Report: route count, grades, sit start count, live URL `https://bursh-dev.github.io/beta_lens/game/`
