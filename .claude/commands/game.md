@@ -15,7 +15,7 @@ New fields may be added over time — pass them through to the ROUTES array as-i
 
 1. **Read** `docs/game/routes.json`. Validate every entry has `img` and `grade`. Check each `img` file exists in `docs/game/images/`.
 
-2. **Build ROUTES array**: Convert the JSON into a JS array literal for embedding in HTML. Format each entry on its own line with 2-space indent, preserving all fields.
+2. **Build ROUTES array**: Convert the JSON into a JS array literal for embedding in HTML. Format each entry on its own line with 2-space indent, preserving all fields. Prepend `images/` to each `img` value (routes.json stores bare filenames, the HTML needs relative paths).
 
 3. **Build GRADES array**: Collect unique grades, sort by numeric value (V4 < V5 < V6).
 
