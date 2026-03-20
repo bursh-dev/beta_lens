@@ -1,100 +1,84 @@
-# BetaLens
+# BetaLens 🧗
 
-AR-like overlay system for bouldering routes. Trainers mark holds on a wall photo, students see them highlighted in real-time through their phone camera — no physical markers or stickers needed.
+**See the beta. Climb the route.**
 
-## How It Works
+AR-like overlay system for bouldering routes. Mark holds on a wall photo, then see them highlighted in real-time through your phone camera — no physical markers, stickers, or apps to install. Just a browser.
 
-### 1. Annotate (Phone or Laptop Browser)
-- Open `betalens.html` → **Annotate Route**
-- Load a photo of the climbing wall (camera or file)
-- **Tap** to place holds, **pinch** to zoom, **drag** to pan
-- **Long-press** a hold to resize or delete it
-- **SAVE** stores the route (anchor image + hold positions) in localStorage
+> **Live demo:** [bursh-dev.github.io/beta_lens](https://bursh-dev.github.io/beta_lens/) · Current version: **v49**
 
-### 2. Live Tracking (Phone Browser)
-- From the menu → **Live Tracking**
-- Point your phone camera at the same wall
-- OpenCV.js detects ORB features, computes homography, and overlays hold markers in real-time
-- HUD shows FPS, match count, and tracking status
+---
 
-### Tech Stack
-- **Frontend**: Single static HTML file (`src/web/betalens.html`) — vanilla JS, no build step
-- **Computer Vision**: OpenCV.js (ORB feature detection + homography)
-- **Storage**: localStorage (route JSON with base64 anchor image)
-- **Python tools**: Desktop annotation (`annotate.py`) and tracking pipeline (`track.py`)
+## What It Does
 
-## Running on Your Phone
+| Annotate | Track Live |
+|----------|-----------|
+| Snap a photo of the wall, tap to place holds | Point your camera at the wall — holds appear in real-time |
+| Color-coded by type: 🟢 start · 🔵 hand · 🟡 foot · 🔴 finish | ORB feature matching + homography overlay at ~30 FPS |
+| Pinch to zoom, drag to pan, long-press to edit | HUD shows FPS, match count, tracking status |
+| Grade routes V0–V16, name them, organize by session | Works on any phone with a browser and camera |
 
-Camera access requires HTTPS. Serve from your laptop:
+## Quick Start
+
+**On your phone** — open the [live demo](https://bursh-dev.github.io/beta_lens/), tap **Annotate Route**, take a photo, and start placing holds. That's it.
+
+**For live tracking** — annotate a route first, then switch to **Live Tracking** and point your camera at the same wall. OpenCV.js handles the rest.
+
+## Features
+
+- **Hold annotation** — tap to place, long-press to edit type/size/delete, pinch-zoom for precision
+- **4 hold types** — start (green), hand (blue), foot (yellow), finish (red) with color-coded glow markers
+- **Route grading** — V0 through V16, tap to cycle
+- **Route library** — save multiple routes, reorder, rename, preview thumbnails
+- **Session management** — "End Session" archives all active routes with auto-backup JSON download
+- **Archive browser** — browse past sessions, restore individual routes
+- **IndexedDB storage** — anchor images stored in IndexedDB (hundreds of MB), no more 5 MB localStorage limit
+- **Export / Import** — self-contained JSON files with embedded images for sharing and backup
+- **Live AR overlay** — real-time hold projection using ORB feature detection + homography
+- **Zero install** — single HTML file, runs entirely in the browser, no server needed for annotation
+
+## Running Locally (for camera access)
+
+Camera requires HTTPS. Serve from your laptop on the same WiFi:
 
 ```bash
-# 1. Generate self-signed cert (one time)
+# Generate self-signed cert (one time)
 MSYS_NO_PATHCONV=1 openssl req -x509 -newkey rsa:2048 \
   -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=localhost"
 
-# 2. Start HTTPS server
-python serve.py
-# Serves on https://0.0.0.0:9443
+# Start HTTPS server
+python serve.py          # serves on https://0.0.0.0:9443
 
-# 3. Find your laptop's IP
-ipconfig  # Windows — look for Wi-Fi adapter IPv4
+# On your phone, open:
+# https://<laptop-ip>:9443/betalens.html
 ```
 
-On your phone (same WiFi), open in Chrome:
-```
-https://<laptop-ip>:9443/betalens.html
-```
-Tap through the "Not private" warning (Advanced → Proceed). Chrome will then allow camera access.
+> Tap through Chrome's "Not private" warning (Advanced → Proceed). Camera access requires `https://` — `file://` won't work on Android.
 
-> **Why not just open the HTML file directly?**
-> `getUserMedia` (camera API) requires a secure context: `https://` or `localhost`.
-> Opening via `file://` is blocked on Android Chrome, and `content://` URLs (from Telegram/WhatsApp) don't qualify.
+## Tech Stack
+
+| Layer | Tech |
+|-------|------|
+| **App** | Single static HTML — vanilla JS, zero dependencies, no build step |
+| **Vision** | OpenCV.js — ORB feature detection, BFMatcher, `findHomography` |
+| **Storage** | IndexedDB (images) + localStorage (metadata) |
+| **Hosting** | GitHub Pages (`docs/index.html`) |
+| **Dev server** | `serve.py` — Python HTTPS server with self-signed cert |
 
 ## Project Structure
 
 ```
-src/
-  web/
-    betalens.html    # Main app — annotation + live tracking
-  beta_lens/
-    track.py         # Python tracking pipeline (desktop)
-    annotate.py      # Python annotation tool (desktop)
-docs/
-  design.md          # Architecture and design document
-serve.py             # HTTPS dev server for phone testing
-simulation_data/     # Test images/video (gitignored)
+src/web/betalens.html     ← the entire app (annotation + live tracking)
+docs/index.html           ← GitHub Pages copy (synced from src/web)
+docs/game/                ← Guess the Grade — bonus mini-game
+serve.py                  ← local HTTPS dev server
+src/beta_lens/track.py    ← Python tracking pipeline (desktop)
+src/beta_lens/annotate.py ← Python annotation tool (desktop)
 ```
 
-## UI Design
+## Bonus: Guess the Grade
 
-Terminator HUD aesthetic — red on black, monospace font, scan lines. Left side panel (52px) for controls, optimized for mobile. Cyan hold markers with glow effect.
+A fun [mini-game](https://bursh-dev.github.io/beta_lens/game/) — look at a bouldering route photo, guess the V-grade, see how close you get. Timed rounds with zoom/pan support.
 
-## Future Plans / Ideas
+---
 
-### Short Term
-- [ ] Test tracking at the gym — tune ORB parameters (feature count, match ratio, min matches) for real lighting conditions
-- [ ] Multiple routes — save/load different routes on the same wall (route list UI)
-- [ ] Route naming and metadata (grade, setter, date)
-- [ ] Share routes between devices (QR code with route data, or URL-based sharing)
-
-### Medium Term
-- [ ] Hold types — differentiate start, hand, foot, finish holds with distinct colors/shapes
-- [ ] Sequence mode — number holds to show climbing order, animate sequence
-- [ ] Tracking stability — temporal smoothing, kalman filter for jitter reduction
-- [ ] Offline support — service worker for PWA, cache OpenCV.js
-- [ ] Better anchor image matching — SIFT (more robust than ORB) if performance allows
-
-### Long Term
-- [ ] Backend service (Firebase/Supabase) for route storage and sharing
-- [ ] Gym integration — route database per gym, QR codes on walls linking to routes
-- [ ] Native Android app for better camera performance and background tracking
-- [ ] Multi-wall support — detect which wall you're looking at automatically
-- [ ] Social features — share beta, comment on routes, video recording with overlay
-- [ ] AI hold detection — auto-detect holds from wall photo using computer vision/ML
-- [ ] Shape fill markers — flood-fill hold color to paint actual hold shape instead of circle, with per-hold toggle (shape/circle fallback)
-
-### Technical Debt
-- [ ] Move from localStorage to IndexedDB for larger route storage
-- [ ] Add error recovery for tracking loss (re-detect anchor)
-- [ ] Responsive layout testing on various phone sizes
-- [ ] Unit tests for coordinate transforms and feature matching
+*Built for climbers who want to share beta without chalk marks.*
