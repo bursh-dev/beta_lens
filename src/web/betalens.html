@@ -586,7 +586,7 @@
 </div>
 
 <script>
-const BUILD_VER = '55';
+const BUILD_VER = '56';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3018,97 +3018,91 @@ function seqScreenToImg(clientX, clientY) {
   };
 }
 
-// Draw all tag bubbles stacked at the side margins with leader lines
+// Draw a small arrowhead at (tx, ty) pointing from (fx, fy)
+function drawArrow(ctx, fx, fy, tx, ty, size, color, alpha) {
+  const angle = Math.atan2(ty - fy, tx - fx);
+  ctx.fillStyle = `rgba(${color},${alpha})`;
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(tx - size * Math.cos(angle - 0.4), ty - size * Math.sin(angle - 0.4));
+  ctx.lineTo(tx - size * Math.cos(angle + 0.4), ty - size * Math.sin(angle + 0.4));
+  ctx.closePath();
+  ctx.fill();
+}
+
+// Shared tag drawing logic
+function _drawTagsSide(ctx, tags, side, imgW, imgH, color, fs, pad, bh, gap, margin, opacityFn) {
+  let startY = tags.length > 0 ? Math.max(margin, tags[0].hy - bh) : margin;
+  const arrSize = Math.max(5, fs * 0.5);
+
+  for (let i = 0; i < tags.length; i++) {
+    const t = tags[i];
+    const op = opacityFn ? opacityFn(t) : 1;
+    const label = (t.moveNum + 1) + ' ' + t.tag;
+    ctx.font = `${fs}px Courier New`;
+    const tw = ctx.measureText(label).width;
+    const bw = tw + pad * 2;
+    const by = Math.min(imgH - bh - margin, Math.max(margin, startY));
+    const bx = side === 'left' ? margin : imgW - margin - bw;
+
+    ctx.globalAlpha = op;
+
+    // Pill bubble
+    const r = bh / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.beginPath();
+    ctx.moveTo(bx + r, by);
+    ctx.lineTo(bx + bw - r, by);
+    ctx.arc(bx + bw - r, by + r, r, -Math.PI / 2, Math.PI / 2);
+    ctx.lineTo(bx + r, by + bh);
+    ctx.arc(bx + r, by + r, r, Math.PI / 2, -Math.PI / 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Text
+    ctx.fillStyle = `rgb(${color})`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, bx + pad, by + bh / 2);
+
+    // Thin line + arrowhead
+    const lx = side === 'left' ? bx + bw : bx;
+    const ly = by + bh / 2;
+    ctx.strokeStyle = `rgba(${color},0.2)`;
+    ctx.lineWidth = 0.8;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(lx, ly);
+    ctx.lineTo(t.hx, t.hy);
+    ctx.stroke();
+
+    drawArrow(ctx, lx, ly, t.hx, t.hy, arrSize, color, 0.4 * op);
+
+    ctx.globalAlpha = 1;
+    startY = by + bh + gap;
+  }
+}
+
+// Record mode: all tags, full opacity
 function drawTagBubbles(ctx, holds, moves, imgW, imgH, color) {
   const tagged = [];
   for (let i = 0; i < moves.length; i++) {
     if (moves[i].tag) {
       const h = holds[moves[i].holdIdx];
-      tagged.push({ moveNum: i, tag: moves[i].tag, hx: h.x, hy: h.y, hr: h.r });
+      tagged.push({ moveNum: i, tag: moves[i].tag, hx: h.x, hy: h.y });
     }
   }
   if (!tagged.length) return;
 
-  const fs = Math.max(12, Math.min(18, imgW * 0.015));
-  ctx.font = `bold ${fs}px Courier New`;
-  const pad = 5, bh = fs + pad * 2, gap = 4;
-  const margin = imgW * 0.02;
+  const fs = Math.max(9, Math.min(13, imgW * 0.012));
+  const pad = 4, bh = fs + pad * 2, gap = 3, margin = imgW * 0.015;
 
-  // Split into left-side and right-side based on hold position
-  const leftTags = tagged.filter(t => t.hx > imgW * 0.4).sort((a, b) => a.hy - b.hy);
-  const rightTags = tagged.filter(t => t.hx <= imgW * 0.4).sort((a, b) => a.hy - b.hy);
+  const left = tagged.filter(t => t.hx > imgW * 0.4).sort((a, b) => a.hy - b.hy);
+  const right = tagged.filter(t => t.hx <= imgW * 0.4).sort((a, b) => a.hy - b.hy);
 
-  function drawSide(tags, side) {
-    // Stack bubbles vertically, starting near the first hold's y
-    let startY = tags.length > 0 ? Math.max(margin, tags[0].hy - bh) : margin;
-
-    for (let i = 0; i < tags.length; i++) {
-      const t = tags[i];
-      const label = (t.moveNum + 1) + ' ' + t.tag;
-      ctx.font = `bold ${fs}px Courier New`;
-      const tw = ctx.measureText(label).width;
-      const bw = tw + pad * 2;
-      const by = startY;
-
-      let bx;
-      if (side === 'left') {
-        bx = margin;
-      } else {
-        bx = imgW - margin - bw;
-      }
-
-      // Clamp vertically
-      const clampedY = Math.min(imgH - bh - margin, Math.max(margin, by));
-
-      // Rounded rect bubble
-      const r = 4;
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.beginPath();
-      ctx.moveTo(bx + r, clampedY);
-      ctx.lineTo(bx + bw - r, clampedY);
-      ctx.arcTo(bx + bw, clampedY, bx + bw, clampedY + r, r);
-      ctx.arcTo(bx + bw, clampedY + bh, bx + bw - r, clampedY + bh, r);
-      ctx.arcTo(bx, clampedY + bh, bx, clampedY + bh - r, r);
-      ctx.arcTo(bx, clampedY, bx + r, clampedY, r);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.strokeStyle = `rgba(${color},0.4)`;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      // Text
-      ctx.fillStyle = `rgb(${color})`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, bx + pad, clampedY + bh / 2);
-
-      // Leader line from bubble edge to hold
-      const lineStartX = side === 'left' ? bx + bw : bx;
-      const lineStartY = clampedY + bh / 2;
-      ctx.strokeStyle = `rgba(${color},0.25)`;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.moveTo(lineStartX, lineStartY);
-      ctx.lineTo(t.hx, t.hy);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Small dot at the hold end
-      ctx.fillStyle = `rgba(${color},0.4)`;
-      ctx.beginPath();
-      ctx.arc(t.hx, t.hy, 3, 0, Math.PI * 2);
-      ctx.fill();
-
-      startY = clampedY + bh + gap;
-    }
-  }
-
-  ctx.textAlign = 'start';
-  ctx.textBaseline = 'alphabetic';
-  drawSide(leftTags, 'left');
-  drawSide(rightTags, 'right');
+  ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+  _drawTagsSide(ctx, left, 'left', imgW, imgH, color, fs, pad, bh, gap, margin, null);
+  _drawTagsSide(ctx, right, 'right', imgW, imgH, color, fs, pad, bh, gap, margin, null);
 }
 
 // Replay version: each move has _moveNum and _opacity
@@ -3117,73 +3111,20 @@ function drawTagBubblesWithOpacity(ctx, holds, moves, imgW, imgH, color) {
   for (let i = 0; i < moves.length; i++) {
     if (moves[i].tag) {
       const h = holds[moves[i].holdIdx];
-      tagged.push({ moveNum: moves[i]._moveNum, tag: moves[i].tag, hx: h.x, hy: h.y, hr: h.r, opacity: moves[i]._opacity });
+      tagged.push({ moveNum: moves[i]._moveNum, tag: moves[i].tag, hx: h.x, hy: h.y, opacity: moves[i]._opacity });
     }
   }
   if (!tagged.length) return;
 
-  const fs = Math.max(12, Math.min(18, imgW * 0.015));
-  const pad = 5, bh = fs + pad * 2, gap = 4;
-  const margin = imgW * 0.02;
+  const fs = Math.max(9, Math.min(13, imgW * 0.012));
+  const pad = 4, bh = fs + pad * 2, gap = 3, margin = imgW * 0.015;
 
-  const leftTags = tagged.filter(t => t.hx > imgW * 0.4).sort((a, b) => a.hy - b.hy);
-  const rightTags = tagged.filter(t => t.hx <= imgW * 0.4).sort((a, b) => a.hy - b.hy);
+  const left = tagged.filter(t => t.hx > imgW * 0.4).sort((a, b) => a.hy - b.hy);
+  const right = tagged.filter(t => t.hx <= imgW * 0.4).sort((a, b) => a.hy - b.hy);
 
-  function drawSide(tags, side) {
-    let startY = tags.length > 0 ? Math.max(margin, tags[0].hy - bh) : margin;
-    for (let i = 0; i < tags.length; i++) {
-      const t = tags[i];
-      const op = t.opacity;
-      const label = (t.moveNum + 1) + ' ' + t.tag;
-      ctx.font = `bold ${fs}px Courier New`;
-      const tw = ctx.measureText(label).width;
-      const bw = tw + pad * 2;
-      const by = Math.min(imgH - bh - margin, Math.max(margin, startY));
-      let bx = side === 'left' ? margin : imgW - margin - bw;
-
-      const r = 4;
-      ctx.globalAlpha = op;
-
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.beginPath();
-      ctx.moveTo(bx + r, by);
-      ctx.lineTo(bx + bw - r, by);
-      ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
-      ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
-      ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
-      ctx.arcTo(bx, by, bx + r, by, r);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.strokeStyle = `rgba(${color},0.4)`;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      ctx.fillStyle = `rgb(${color})`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, bx + pad, by + bh / 2);
-
-      const lineStartX = side === 'left' ? bx + bw : bx;
-      ctx.strokeStyle = `rgba(${color},0.2)`;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.moveTo(lineStartX, by + bh / 2);
-      ctx.lineTo(t.hx, t.hy);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      ctx.globalAlpha = 1;
-      startY = by + bh + gap;
-    }
-  }
-
-  ctx.textAlign = 'start';
-  ctx.textBaseline = 'alphabetic';
-  ctx.globalAlpha = 1;
-  drawSide(leftTags, 'left');
-  drawSide(rightTags, 'right');
+  ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic'; ctx.globalAlpha = 1;
+  _drawTagsSide(ctx, left, 'left', imgW, imgH, color, fs, pad, bh, gap, margin, t => t.opacity);
+  _drawTagsSide(ctx, right, 'right', imgW, imgH, color, fs, pad, bh, gap, margin, t => t.opacity);
 }
 
 function seqDraw() {
