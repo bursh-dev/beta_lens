@@ -586,7 +586,7 @@
 </div>
 
 <script>
-const BUILD_VER = '60';
+const BUILD_VER = '61';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3080,7 +3080,7 @@ function _drawTagsSide(ctx, tags, side, imgW, imgH, color, fs, pad, bh, gap, mar
     // Thin line + arrowhead
     const lx = side === 'left' ? bx + bw : bx;
     const ly = by + bh / 2;
-    ctx.strokeStyle = `rgba(0,229,255,0.3)`;
+    ctx.strokeStyle = `rgba(255,50,50,0.35)`;
     ctx.lineWidth = 1.2;
     ctx.setLineDash([]);
     ctx.beginPath();
@@ -3088,7 +3088,7 @@ function _drawTagsSide(ctx, tags, side, imgW, imgH, color, fs, pad, bh, gap, mar
     ctx.lineTo(t.hx, t.hy);
     ctx.stroke();
 
-    drawArrow(ctx, lx, ly, t.hx, t.hy, arrSize * 2.5, '0,229,255', 0.85 * op);
+    drawArrow(ctx, lx, ly, t.hx, t.hy, arrSize * 2.5, '255,50,50', 0.9 * op);
 
     ctx.globalAlpha = 1;
     startY = by + bh + gap;
@@ -3516,11 +3516,11 @@ function replayDraw() {
 
     // Pulsing ring for tagged holds (visible tags only — last 3)
     if (hasTag && moveNum >= step - 2) {
-      const pulse = 0.3 + 0.3 * Math.sin(Date.now() * 0.005 + moveNum);
+      const pulse = 0.4 + 0.5 * Math.sin(Date.now() * 0.006 + moveNum);
       replayCtx_.beginPath();
-      replayCtx_.arc(h.x, h.y, h.r * 1.4, 0, Math.PI * 2);
-      replayCtx_.strokeStyle = `rgba(0,229,255,${pulse})`;
-      replayCtx_.lineWidth = 2;
+      replayCtx_.arc(h.x, h.y, h.r * 1.5, 0, Math.PI * 2);
+      replayCtx_.strokeStyle = `rgba(255,50,50,${pulse})`;
+      replayCtx_.lineWidth = 3;
       replayCtx_.stroke();
     }
 
