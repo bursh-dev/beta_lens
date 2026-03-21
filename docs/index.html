@@ -586,7 +586,7 @@
 </div>
 
 <script>
-const BUILD_VER = '64';
+const BUILD_VER = '65';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3127,8 +3127,8 @@ function drawTagBubbles(ctx, holds, moves, imgW, imgH, color) {
   }
   if (!tagged.length) return;
 
-  const fs = Math.max(11, Math.min(16, imgW * 0.015));
-  const pad = 6, bh = fs + pad * 2, gap = 4, margin = imgW * 0.015;
+  const fs = Math.max(14, Math.min(22, imgW * 0.02));
+  const pad = 8, bh = fs + pad * 2, gap = 5, margin = imgW * 0.015;
 
   const left = tagged.filter(t => t.hx > imgW * 0.4).sort((a, b) => a.hy - b.hy);
   const right = tagged.filter(t => t.hx <= imgW * 0.4).sort((a, b) => a.hy - b.hy);
@@ -3149,8 +3149,8 @@ function drawTagBubblesWithOpacity(ctx, holds, moves, imgW, imgH, color) {
   }
   if (!tagged.length) return;
 
-  const fs = Math.max(11, Math.min(16, imgW * 0.015));
-  const pad = 6, bh = fs + pad * 2, gap = 4, margin = imgW * 0.015;
+  const fs = Math.max(14, Math.min(22, imgW * 0.02));
+  const pad = 8, bh = fs + pad * 2, gap = 5, margin = imgW * 0.015;
 
   const left = tagged.filter(t => t.hx > imgW * 0.4).sort((a, b) => a.hy - b.hy);
   const right = tagged.filter(t => t.hx <= imgW * 0.4).sort((a, b) => a.hy - b.hy);
