@@ -320,6 +320,44 @@
   }
   .as-del:active { background: rgba(255,100,100,0.15); }
 
+  /* Sequence screens */
+  #seq-record, #seq-replay { flex-direction: column; }
+  #seq-status, #replay-status {
+    position: absolute; top: 10px; left: 64px; right: 8px;
+    font-size: 11px; color: #888; z-index: 5; letter-spacing: 1px;
+  }
+  #seq-viewport, #replay-viewport {
+    flex: 1; position: relative; overflow: hidden; touch-action: none;
+  }
+  #seq-canvas, #replay-canvas {
+    position: absolute; transform-origin: 0 0;
+  }
+  #seq-zoom-indicator {
+    position: absolute; bottom: 8px; right: 8px;
+    font-size: 11px; color: rgba(255,255,255,0.4); z-index: 5;
+  }
+  #seq-panel {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 56px;
+    background: linear-gradient(180deg, #2a2a2a, #1a1a1a);
+    border-right: 1px solid #444; display: flex; flex-direction: column;
+    align-items: center; padding: 8px 0; gap: 6px; z-index: 10;
+  }
+  #replay-controls {
+    display: flex; align-items: center; justify-content: center;
+    gap: 12px; padding: 10px; background: #1a1a1a;
+    border-top: 1px solid #333;
+  }
+  .replay-btn {
+    background: transparent; border: 1px solid #666; color: #ccc;
+    font-family: 'Courier New', monospace; font-size: 16px;
+    width: 40px; height: 40px; border-radius: 8px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .replay-btn:active { background: #333; }
+  #replay-counter {
+    font-size: 13px; color: #888; min-width: 60px; text-align: center;
+  }
+
   /* Loading overlay */
   #loading {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -435,6 +473,40 @@
   <input type="file" id="capture-input" accept="image/*" capture="environment" style="display:none">
 </div>
 
+<!-- Sequence Record Screen -->
+<div id="seq-record" class="screen">
+  <div id="seq-status">// TAP HOLDS IN CLIMBING ORDER</div>
+  <div id="seq-viewport">
+    <canvas id="seq-canvas"></canvas>
+  </div>
+  <div id="seq-zoom-indicator">1.0x</div>
+  <div id="seq-panel">
+    <button class="pbtn pbtn-done" onclick="seqBack()"><span class="pbtn-icon">&lt;</span>DONE</button>
+    <button class="pbtn pbtn-save" onclick="seqSave()"><span class="pbtn-icon">&#9654;</span>SAVE</button>
+    <div class="panel-info">
+      <span class="val" id="seq-moves-count">0</span>MOVES
+    </div>
+    <button class="pbtn" onclick="seqUndo()"><span class="pbtn-icon">&larr;</span>UNDO</button>
+    <button class="pbtn" onclick="seqClear()"><span class="pbtn-icon">X</span>CLR</button>
+    <button class="pbtn" onclick="seqResetZoom()"><span class="pbtn-icon">[ ]</span>1:1</button>
+  </div>
+</div>
+
+<!-- Sequence Replay Screen -->
+<div id="seq-replay" class="screen">
+  <div id="replay-status">// REPLAY</div>
+  <div id="replay-viewport">
+    <canvas id="replay-canvas"></canvas>
+  </div>
+  <div id="replay-controls">
+    <button class="replay-btn" onclick="replayStep(-1)">&larr;</button>
+    <button class="replay-btn" id="replay-play-btn" onclick="replayTogglePlay()">&#9654;</button>
+    <button class="replay-btn" onclick="replayStep(1)">&rarr;</button>
+    <span id="replay-counter">0 / 0</span>
+    <button class="replay-btn" onclick="replayBack()">X</button>
+  </div>
+</div>
+
 <!-- Save Toast -->
 <div id="save-toast">ROUTE SAVED</div>
 <div id="share-toast" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.9);border:2px solid #76ff03;color:#76ff03;font-family:'Courier New',monospace;padding:24px 40px;font-size:18px;letter-spacing:2px;z-index:100;display:none;text-align:center;max-width:80vw;"></div>
@@ -461,7 +533,7 @@
 </div>
 
 <script>
-const BUILD_VER = '49';
+const BUILD_VER = '50';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -1036,6 +1108,7 @@ async function showMenu() {
           `<div class="ri-btns">` +
             `<button class="ri-btn" onclick="event.stopPropagation();startAnnotate(${i})">Edit</button>` +
             `<button class="ri-btn" onclick="event.stopPropagation();selectRoute(${i})">Track</button>` +
+            `<button class="ri-btn" onclick="event.stopPropagation();startSequence(${i})" style="color:#00e5ff;border-color:#00e5ff;">Beta</button>` +
             `<button class="ri-btn ri-del" onclick="event.stopPropagation();deleteRoute(${i})">X</button>` +
           `</div>` +
         `</div>` +
@@ -2811,7 +2884,451 @@ async function tuneAutoCapture(matchCount, H, matchedAnchor) {
 // Handle resize
 window.addEventListener('resize', () => {
   if (annoImg) { fitCanvas(); drawAnnotation(); }
+  if (seqImg) { seqFitCanvas(); seqDraw(); }
 });
+
+// ===== SEQUENCE RECORDER =====
+let seqImg = null;
+let seqCanvas, seqCtx;
+let seqRoute = null;
+let seqRouteIdx = -1;
+let seqMoves = []; // [holdIdx, holdIdx, ...]
+let seqZoom = 1, seqPanX = 0, seqPanY = 0, seqBaseScale = 1;
+let seqPinching = false, seqDragging = false;
+let seqPinchStartDist = 0, seqPinchStartZoom = 1;
+let seqDragStartX = 0, seqDragStartY = 0, seqPanStartX = 0, seqPanStartY = 0;
+let seqTotalMove = 0;
+
+async function startSequence(idx) {
+  const routes = await getRoutes();
+  const r = routes[idx];
+  if (!r || !r.holds || r.holds.length === 0 || !r.anchor || !r.anchor.dataUrl) {
+    alert('Route needs holds and an image first');
+    return;
+  }
+  // If route already has a sequence, offer replay
+  if (r.sequences && r.sequences.length > 0) {
+    const action = confirm('This route has a recorded beta.\n\nOK = Replay it\nCancel = Record new');
+    if (action) {
+      startReplay(idx);
+      return;
+    }
+  }
+  seqRoute = r;
+  seqRouteIdx = idx;
+  seqMoves = [];
+  seqCanvas = document.getElementById('seq-canvas');
+  seqCtx = seqCanvas.getContext('2d');
+  seqImg = new Image();
+  seqImg.onload = function() {
+    showScreen('seq-record');
+    seqFitCanvas();
+    seqDraw();
+    seqUpdateStatus();
+  };
+  seqImg.src = r.anchor.dataUrl;
+}
+
+function seqFitCanvas() {
+  if (!seqImg) return;
+  const vp = document.getElementById('seq-viewport');
+  seqCanvas.width = seqImg.width;
+  seqCanvas.height = seqImg.height;
+  seqBaseScale = Math.min(vp.offsetWidth / seqImg.width, vp.offsetHeight / seqImg.height);
+  seqZoom = 1;
+  seqPanX = (vp.offsetWidth - seqImg.width * seqBaseScale) / 2;
+  seqPanY = (vp.offsetHeight - seqImg.height * seqBaseScale) / 2;
+  seqApplyTransform();
+}
+
+function seqApplyTransform() {
+  const vp = document.getElementById('seq-viewport');
+  const s = seqBaseScale * seqZoom;
+  const imgW = seqImg.width * s, imgH = seqImg.height * s;
+  const vpW = vp.offsetWidth, vpH = vp.offsetHeight;
+  const margin = 0.2;
+  seqPanX = Math.max(-imgW * (1 - margin), Math.min(vpW * (1 - margin), seqPanX));
+  seqPanY = Math.max(-imgH * (1 - margin), Math.min(vpH * (1 - margin), seqPanY));
+  seqCanvas.style.transform = `translate(${seqPanX}px, ${seqPanY}px) scale(${s})`;
+  document.getElementById('seq-zoom-indicator').textContent = `${seqZoom.toFixed(1)}x`;
+}
+
+function seqScreenToImg(clientX, clientY) {
+  const vp = document.getElementById('seq-viewport');
+  const rect = vp.getBoundingClientRect();
+  const s = seqBaseScale * seqZoom;
+  return {
+    x: Math.round((clientX - rect.left - seqPanX) / s),
+    y: Math.round((clientY - rect.top - seqPanY) / s)
+  };
+}
+
+function seqDraw() {
+  if (!seqImg) return;
+  seqCtx.clearRect(0, 0, seqCanvas.width, seqCanvas.height);
+  seqCtx.drawImage(seqImg, 0, 0);
+
+  const rc = ROUTE_COLORS[seqRoute.colorIdx || 0];
+  const [cr, cg, cb] = rc.rgb;
+  const holds = seqRoute.holds;
+
+  // Draw connecting lines first
+  for (let i = 1; i < seqMoves.length; i++) {
+    const prev = holds[seqMoves[i - 1]];
+    const curr = holds[seqMoves[i]];
+    seqCtx.strokeStyle = `rgba(${cr},${cg},${cb},0.6)`;
+    seqCtx.lineWidth = 3;
+    seqCtx.setLineDash([8, 6]);
+    seqCtx.beginPath();
+    seqCtx.moveTo(prev.x, prev.y);
+    seqCtx.lineTo(curr.x, curr.y);
+    seqCtx.stroke();
+    seqCtx.setLineDash([]);
+  }
+
+  // Draw all holds
+  for (let i = 0; i < holds.length; i++) {
+    const h = holds[i];
+    const moveIdx = seqMoves.indexOf(i);
+    const inSeq = moveIdx !== -1;
+    const isLast = seqMoves.length > 0 && seqMoves[seqMoves.length - 1] === i;
+    const alpha = inSeq ? 0.55 : 0.15;
+
+    // Glow for last move
+    if (isLast) {
+      const glow = seqCtx.createRadialGradient(h.x, h.y, h.r * 0.3, h.x, h.y, h.r * 1.5);
+      glow.addColorStop(0, `rgba(255,255,255,0.4)`);
+      glow.addColorStop(1, `rgba(255,255,255,0)`);
+      seqCtx.beginPath();
+      seqCtx.arc(h.x, h.y, h.r * 1.5, 0, Math.PI * 2);
+      seqCtx.fillStyle = glow;
+      seqCtx.fill();
+    }
+
+    // Fill
+    seqCtx.beginPath();
+    seqCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+    seqCtx.fillStyle = `rgba(${cr},${cg},${cb},${alpha})`;
+    seqCtx.fill();
+
+    // Border
+    seqCtx.beginPath();
+    seqCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+    seqCtx.strokeStyle = `rgba(${cr},${cg},${cb},${inSeq ? 0.9 : 0.3})`;
+    seqCtx.lineWidth = 2;
+    seqCtx.stroke();
+
+    // Label: move number if in sequence, hold type if not
+    const fontSize = Math.max(18, h.r * 0.5);
+    seqCtx.font = `bold ${fontSize}px Courier New`;
+    const label = inSeq ? String(moveIdx + 1) : (HOLD_SHORT[h.kind] || '');
+    if (label) {
+      const lw = seqCtx.measureText(label).width;
+      seqCtx.fillStyle = `rgba(0,0,0,0.6)`;
+      seqCtx.fillRect(h.x - lw / 2 - 3, h.y + h.r + 3, lw + 6, fontSize + 3);
+      seqCtx.fillStyle = inSeq ? '#fff' : `rgba(${cr},${cg},${cb},0.5)`;
+      seqCtx.fillText(label, h.x - lw / 2, h.y + h.r + fontSize + 1);
+    }
+  }
+}
+
+function seqUpdateStatus() {
+  document.getElementById('seq-moves-count').textContent = seqMoves.length;
+  const n = seqMoves.length;
+  document.getElementById('seq-status').textContent =
+    n === 0 ? '// TAP HOLDS IN CLIMBING ORDER' :
+    `// ${n} MOVE${n > 1 ? 'S' : ''} — TAP NEXT HOLD`;
+}
+
+function seqTapHold(imgX, imgY) {
+  const holds = seqRoute.holds;
+  let bestIdx = -1, bestDist = Infinity;
+  for (let i = 0; i < holds.length; i++) {
+    const h = holds[i];
+    const dist = Math.sqrt((h.x - imgX) ** 2 + (h.y - imgY) ** 2);
+    if (dist < h.r * 1.8 && dist < bestDist) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+  }
+  if (bestIdx >= 0) {
+    seqMoves.push(bestIdx);
+    seqDraw();
+    seqUpdateStatus();
+  }
+}
+
+function seqUndo() {
+  if (seqMoves.length > 0) {
+    seqMoves.pop();
+    seqDraw();
+    seqUpdateStatus();
+  }
+}
+
+function seqClear() {
+  seqMoves = [];
+  seqDraw();
+  seqUpdateStatus();
+}
+
+function seqResetZoom() {
+  seqFitCanvas();
+  seqDraw();
+}
+
+async function seqSave() {
+  if (seqMoves.length === 0) { alert('No moves recorded'); return; }
+  const routes = await getRoutes();
+  const r = routes[seqRouteIdx];
+  if (!r.sequences) r.sequences = [];
+  r.sequences.push({
+    createdAt: new Date().toISOString(),
+    moves: seqMoves.map(idx => ({ holdIdx: idx }))
+  });
+  await saveRoutes(routes);
+  showSaveToast('BETA SAVED');
+  seqImg = null;
+  showMenu();
+}
+
+function seqBack() {
+  seqImg = null;
+  showMenu();
+}
+
+function showSaveToast(msg) {
+  const toast = document.getElementById('save-toast');
+  toast.textContent = msg || 'SAVED';
+  toast.style.display = 'block';
+  toast.style.opacity = '1';
+  setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.style.display = 'none', 400); }, 1200);
+}
+
+// Touch handlers for sequence canvas
+(function() {
+  const vp = document.getElementById('seq-viewport');
+  if (!vp) return;
+  function dist(t) {
+    const dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  vp.addEventListener('touchstart', function(e) {
+    seqTotalMove = 0;
+    if (e.touches.length === 2) {
+      seqPinching = true; seqDragging = false;
+      seqPinchStartDist = dist(e.touches);
+      seqPinchStartZoom = seqZoom;
+      e.preventDefault();
+    } else if (e.touches.length === 1) {
+      seqDragging = true;
+      seqDragStartX = e.touches[0].clientX;
+      seqDragStartY = e.touches[0].clientY;
+      seqPanStartX = seqPanX;
+      seqPanStartY = seqPanY;
+    }
+  }, { passive: false });
+  vp.addEventListener('touchmove', function(e) {
+    if (seqPinching && e.touches.length === 2) {
+      e.preventDefault();
+      const d = dist(e.touches);
+      const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const rect = vp.getBoundingClientRect();
+      const cx = mx - rect.left, cy = my - rect.top;
+      const newZoom = Math.max(1, Math.min(seqPinchStartZoom * (d / seqPinchStartDist), 8));
+      seqPanX = cx - (cx - seqPanX) * (newZoom / seqZoom);
+      seqPanY = cy - (cy - seqPanY) * (newZoom / seqZoom);
+      seqZoom = newZoom;
+      seqApplyTransform();
+    } else if (seqDragging && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - seqDragStartX;
+      const dy = e.touches[0].clientY - seqDragStartY;
+      seqTotalMove += Math.abs(dx) + Math.abs(dy);
+      if (seqZoom > 1.05) {
+        e.preventDefault();
+        seqPanX = seqPanStartX + dx;
+        seqPanY = seqPanStartY + dy;
+        seqApplyTransform();
+      }
+    }
+  }, { passive: false });
+  vp.addEventListener('touchend', function(e) {
+    if (e.touches.length < 2) seqPinching = false;
+    if (e.touches.length === 0 && seqDragging) {
+      seqDragging = false;
+      if (seqTotalMove < TAP_THRESHOLD && e.changedTouches.length === 1) {
+        const t = e.changedTouches[0];
+        const pt = seqScreenToImg(t.clientX, t.clientY);
+        seqTapHold(pt.x, pt.y);
+      }
+    }
+  });
+  // Double tap to reset
+  let lastTap = 0;
+  vp.addEventListener('touchend', function(e) {
+    if (e.touches.length > 0) return;
+    const now = Date.now();
+    if (now - lastTap < 300) { seqResetZoom(); e.preventDefault(); }
+    lastTap = now;
+  });
+  // Mouse click for desktop
+  vp.addEventListener('click', function(e) {
+    const pt = seqScreenToImg(e.clientX, e.clientY);
+    seqTapHold(pt.x, pt.y);
+  });
+})();
+
+// ===== SEQUENCE REPLAY =====
+let replayRoute = null;
+let replaySeq = null;
+let replayStep_ = 0;
+let replayPlaying = false;
+let replayTimer = null;
+let replayImg = null;
+let replayCanvas_, replayCtx_;
+
+async function startReplay(idx) {
+  const routes = await getRoutes();
+  const r = routes[idx];
+  if (!r || !r.sequences || r.sequences.length === 0) {
+    alert('No beta recorded for this route');
+    return;
+  }
+  replayRoute = r;
+  replaySeq = r.sequences[r.sequences.length - 1]; // latest
+  replayStep_ = 0;
+  replayPlaying = false;
+  replayCanvas_ = document.getElementById('replay-canvas');
+  replayCtx_ = replayCanvas_.getContext('2d');
+  replayImg = new Image();
+  replayImg.onload = function() {
+    showScreen('seq-replay');
+    const vp = document.getElementById('replay-viewport');
+    replayCanvas_.width = replayImg.width;
+    replayCanvas_.height = replayImg.height;
+    const s = Math.min(vp.offsetWidth / replayImg.width, vp.offsetHeight / replayImg.height);
+    const px = (vp.offsetWidth - replayImg.width * s) / 2;
+    const py = (vp.offsetHeight - replayImg.height * s) / 2;
+    replayCanvas_.style.transform = `translate(${px}px, ${py}px) scale(${s})`;
+    replayDraw();
+  };
+  replayImg.src = r.anchor.dataUrl;
+}
+
+function replayDraw() {
+  if (!replayImg) return;
+  replayCtx_.clearRect(0, 0, replayCanvas_.width, replayCanvas_.height);
+  replayCtx_.drawImage(replayImg, 0, 0);
+
+  const rc = ROUTE_COLORS[replayRoute.colorIdx || 0];
+  const [cr, cg, cb] = rc.rgb;
+  const holds = replayRoute.holds;
+  const moves = replaySeq.moves;
+  const step = replayStep_;
+
+  // Draw connecting lines up to current step
+  for (let i = 1; i <= step && i < moves.length; i++) {
+    const prev = holds[moves[i - 1].holdIdx];
+    const curr = holds[moves[i].holdIdx];
+    replayCtx_.strokeStyle = `rgba(${cr},${cg},${cb},0.6)`;
+    replayCtx_.lineWidth = 3;
+    replayCtx_.setLineDash([8, 6]);
+    replayCtx_.beginPath();
+    replayCtx_.moveTo(prev.x, prev.y);
+    replayCtx_.lineTo(curr.x, curr.y);
+    replayCtx_.stroke();
+    replayCtx_.setLineDash([]);
+  }
+
+  // Draw all holds
+  for (let i = 0; i < holds.length; i++) {
+    const h = holds[i];
+    // Check if this hold appears in moves up to current step
+    let moveNum = -1;
+    for (let m = 0; m <= step && m < moves.length; m++) {
+      if (moves[m].holdIdx === i) moveNum = m;
+    }
+    const shown = moveNum >= 0;
+    const isCurrent = step < moves.length && moves[step].holdIdx === i;
+    const alpha = shown ? 0.55 : 0.1;
+
+    // Current hold glow
+    if (isCurrent) {
+      const glow = replayCtx_.createRadialGradient(h.x, h.y, h.r * 0.3, h.x, h.y, h.r * 1.8);
+      glow.addColorStop(0, `rgba(255,255,255,0.5)`);
+      glow.addColorStop(1, `rgba(255,255,255,0)`);
+      replayCtx_.beginPath();
+      replayCtx_.arc(h.x, h.y, h.r * 1.8, 0, Math.PI * 2);
+      replayCtx_.fillStyle = glow;
+      replayCtx_.fill();
+    }
+
+    replayCtx_.beginPath();
+    replayCtx_.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+    replayCtx_.fillStyle = `rgba(${cr},${cg},${cb},${alpha})`;
+    replayCtx_.fill();
+
+    replayCtx_.beginPath();
+    replayCtx_.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+    replayCtx_.strokeStyle = `rgba(${cr},${cg},${cb},${shown ? 0.9 : 0.2})`;
+    replayCtx_.lineWidth = 2;
+    replayCtx_.stroke();
+
+    // Number label
+    if (shown) {
+      const fontSize = Math.max(18, h.r * 0.5);
+      replayCtx_.font = `bold ${fontSize}px Courier New`;
+      const label = String(moveNum + 1);
+      const lw = replayCtx_.measureText(label).width;
+      replayCtx_.fillStyle = `rgba(0,0,0,0.6)`;
+      replayCtx_.fillRect(h.x - lw / 2 - 3, h.y + h.r + 3, lw + 6, fontSize + 3);
+      replayCtx_.fillStyle = isCurrent ? '#00e5ff' : '#fff';
+      replayCtx_.fillText(label, h.x - lw / 2, h.y + h.r + fontSize + 1);
+    }
+  }
+
+  // Update controls
+  document.getElementById('replay-counter').textContent =
+    (step + 1) + ' / ' + moves.length;
+  document.getElementById('replay-status').textContent =
+    `// BETA REPLAY — ${replayRoute.name || 'ROUTE'} ${replayRoute.grade || ''}`;
+  document.getElementById('replay-play-btn').textContent = replayPlaying ? '||' : '\u25B6';
+}
+
+function replayStep(dir) {
+  const moves = replaySeq.moves;
+  replayStep_ = Math.max(0, Math.min(moves.length - 1, replayStep_ + dir));
+  replayDraw();
+}
+
+function replayTogglePlay() {
+  if (replayPlaying) {
+    replayPlaying = false;
+    clearInterval(replayTimer);
+  } else {
+    replayPlaying = true;
+    if (replayStep_ >= replaySeq.moves.length - 1) replayStep_ = 0;
+    replayTimer = setInterval(function() {
+      if (replayStep_ >= replaySeq.moves.length - 1) {
+        replayPlaying = false;
+        clearInterval(replayTimer);
+        replayDraw();
+        return;
+      }
+      replayStep_++;
+      replayDraw();
+    }, 1200);
+  }
+  replayDraw();
+}
+
+function replayBack() {
+  replayPlaying = false;
+  clearInterval(replayTimer);
+  replayImg = null;
+  showMenu();
+}
 </script>
 </body>
 </html>
