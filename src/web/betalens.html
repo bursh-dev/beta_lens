@@ -586,7 +586,7 @@
 </div>
 
 <script>
-const BUILD_VER = '54';
+const BUILD_VER = '55';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3111,6 +3111,81 @@ function drawTagBubbles(ctx, holds, moves, imgW, imgH, color) {
   drawSide(rightTags, 'right');
 }
 
+// Replay version: each move has _moveNum and _opacity
+function drawTagBubblesWithOpacity(ctx, holds, moves, imgW, imgH, color) {
+  const tagged = [];
+  for (let i = 0; i < moves.length; i++) {
+    if (moves[i].tag) {
+      const h = holds[moves[i].holdIdx];
+      tagged.push({ moveNum: moves[i]._moveNum, tag: moves[i].tag, hx: h.x, hy: h.y, hr: h.r, opacity: moves[i]._opacity });
+    }
+  }
+  if (!tagged.length) return;
+
+  const fs = Math.max(12, Math.min(18, imgW * 0.015));
+  const pad = 5, bh = fs + pad * 2, gap = 4;
+  const margin = imgW * 0.02;
+
+  const leftTags = tagged.filter(t => t.hx > imgW * 0.4).sort((a, b) => a.hy - b.hy);
+  const rightTags = tagged.filter(t => t.hx <= imgW * 0.4).sort((a, b) => a.hy - b.hy);
+
+  function drawSide(tags, side) {
+    let startY = tags.length > 0 ? Math.max(margin, tags[0].hy - bh) : margin;
+    for (let i = 0; i < tags.length; i++) {
+      const t = tags[i];
+      const op = t.opacity;
+      const label = (t.moveNum + 1) + ' ' + t.tag;
+      ctx.font = `bold ${fs}px Courier New`;
+      const tw = ctx.measureText(label).width;
+      const bw = tw + pad * 2;
+      const by = Math.min(imgH - bh - margin, Math.max(margin, startY));
+      let bx = side === 'left' ? margin : imgW - margin - bw;
+
+      const r = 4;
+      ctx.globalAlpha = op;
+
+      ctx.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx.beginPath();
+      ctx.moveTo(bx + r, by);
+      ctx.lineTo(bx + bw - r, by);
+      ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
+      ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
+      ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
+      ctx.arcTo(bx, by, bx + r, by, r);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = `rgba(${color},0.4)`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = `rgb(${color})`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, bx + pad, by + bh / 2);
+
+      const lineStartX = side === 'left' ? bx + bw : bx;
+      ctx.strokeStyle = `rgba(${color},0.2)`;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(lineStartX, by + bh / 2);
+      ctx.lineTo(t.hx, t.hy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.globalAlpha = 1;
+      startY = by + bh + gap;
+    }
+  }
+
+  ctx.textAlign = 'start';
+  ctx.textBaseline = 'alphabetic';
+  ctx.globalAlpha = 1;
+  drawSide(leftTags, 'left');
+  drawSide(rightTags, 'right');
+}
+
 function seqDraw() {
   if (!seqImg) return;
   seqCtx.clearRect(0, 0, seqCanvas.width, seqCanvas.height);
@@ -3526,9 +3601,14 @@ function replayDraw() {
 
   }
 
-  // Draw tags at side margins (only up to current step)
-  const visibleMoves = moves.slice(0, step + 1);
-  drawTagBubbles(replayCtx_, holds, visibleMoves, replayImg.width, replayImg.height, `${cr},${cg},${cb}`);
+  // Draw last 3 tags with fade — current=full, previous=fading
+  const recentCount = 3;
+  const recentMoves = [];
+  for (let i = Math.max(0, step - recentCount + 1); i <= step && i < moves.length; i++) {
+    const age = step - i; // 0=current, 1=previous, 2=oldest shown
+    recentMoves.push({ ...moves[i], _moveNum: i, _opacity: age === 0 ? 1.0 : age === 1 ? 0.5 : 0.25 });
+  }
+  drawTagBubblesWithOpacity(replayCtx_, holds, recentMoves, replayImg.width, replayImg.height, `${cr},${cg},${cb}`);
 
   // Update controls
   document.getElementById('replay-counter').textContent =
