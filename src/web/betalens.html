@@ -575,7 +575,7 @@
 </div>
 
 <script>
-const BUILD_VER = '52';
+const BUILD_VER = '53';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3007,43 +3007,97 @@ function seqScreenToImg(clientX, clientY) {
   };
 }
 
-// Draw a speech-bubble tooltip at (x, y) pointing up
-function drawBubble(ctx, x, y, text, color, bgAlpha) {
-  const fs = Math.max(14, Math.min(20, y * 0.02));
+// Draw all tag bubbles stacked at the side margins with leader lines
+function drawTagBubbles(ctx, holds, moves, imgW, imgH, color) {
+  const tagged = [];
+  for (let i = 0; i < moves.length; i++) {
+    if (moves[i].tag) {
+      const h = holds[moves[i].holdIdx];
+      tagged.push({ moveNum: i, tag: moves[i].tag, hx: h.x, hy: h.y, hr: h.r });
+    }
+  }
+  if (!tagged.length) return;
+
+  const fs = Math.max(12, Math.min(18, imgW * 0.015));
   ctx.font = `bold ${fs}px Courier New`;
-  const tw = ctx.measureText(text).width;
-  const pad = 6, tipH = 6, bh = fs + pad * 2, bw = tw + pad * 2;
-  const bx = x - bw / 2, by = y + tipH + 2;
+  const pad = 5, bh = fs + pad * 2, gap = 4;
+  const margin = imgW * 0.02;
 
-  // Bubble background with rounded corners
-  const r = 5;
-  ctx.fillStyle = `rgba(0,0,0,${bgAlpha || 0.75})`;
-  ctx.beginPath();
-  ctx.moveTo(bx + r, by);
-  // Tip pointing up
-  ctx.lineTo(x - 5, by);
-  ctx.lineTo(x, y + 2);
-  ctx.lineTo(x + 5, by);
-  ctx.lineTo(bx + bw - r, by);
-  ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
-  ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
-  ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
-  ctx.arcTo(bx, by, bx + r, by, r);
-  ctx.closePath();
-  ctx.fill();
+  // Split into left-side and right-side based on hold position
+  const leftTags = tagged.filter(t => t.hx > imgW * 0.4).sort((a, b) => a.hy - b.hy);
+  const rightTags = tagged.filter(t => t.hx <= imgW * 0.4).sort((a, b) => a.hy - b.hy);
 
-  // Border
-  ctx.strokeStyle = `rgba(${color},0.5)`;
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  function drawSide(tags, side) {
+    // Stack bubbles vertically, starting near the first hold's y
+    let startY = tags.length > 0 ? Math.max(margin, tags[0].hy - bh) : margin;
 
-  // Text
-  ctx.fillStyle = `rgb(${color})`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, x, by + bh / 2);
+    for (let i = 0; i < tags.length; i++) {
+      const t = tags[i];
+      const label = (t.moveNum + 1) + ' ' + t.tag;
+      ctx.font = `bold ${fs}px Courier New`;
+      const tw = ctx.measureText(label).width;
+      const bw = tw + pad * 2;
+      const by = startY;
+
+      let bx;
+      if (side === 'left') {
+        bx = margin;
+      } else {
+        bx = imgW - margin - bw;
+      }
+
+      // Clamp vertically
+      const clampedY = Math.min(imgH - bh - margin, Math.max(margin, by));
+
+      // Rounded rect bubble
+      const r = 4;
+      ctx.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx.beginPath();
+      ctx.moveTo(bx + r, clampedY);
+      ctx.lineTo(bx + bw - r, clampedY);
+      ctx.arcTo(bx + bw, clampedY, bx + bw, clampedY + r, r);
+      ctx.arcTo(bx + bw, clampedY + bh, bx + bw - r, clampedY + bh, r);
+      ctx.arcTo(bx, clampedY + bh, bx, clampedY + bh - r, r);
+      ctx.arcTo(bx, clampedY, bx + r, clampedY, r);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = `rgba(${color},0.4)`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Text
+      ctx.fillStyle = `rgb(${color})`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, bx + pad, clampedY + bh / 2);
+
+      // Leader line from bubble edge to hold
+      const lineStartX = side === 'left' ? bx + bw : bx;
+      const lineStartY = clampedY + bh / 2;
+      ctx.strokeStyle = `rgba(${color},0.25)`;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(lineStartX, lineStartY);
+      ctx.lineTo(t.hx, t.hy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Small dot at the hold end
+      ctx.fillStyle = `rgba(${color},0.4)`;
+      ctx.beginPath();
+      ctx.arc(t.hx, t.hy, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      startY = clampedY + bh + gap;
+    }
+  }
+
   ctx.textAlign = 'start';
   ctx.textBaseline = 'alphabetic';
+  drawSide(leftTags, 'left');
+  drawSide(rightTags, 'right');
 }
 
 function seqDraw() {
@@ -3138,11 +3192,10 @@ function seqDraw() {
       seqCtx.textBaseline = 'alphabetic';
     }
 
-    // Tag as speech bubble below the hold
-    if (inSeq && seqMoves[moveIdx].tag) {
-      drawBubble(seqCtx, h.x, h.y + h.r, seqMoves[moveIdx].tag, `${cr},${cg},${cb}`, 0.8);
-    }
   }
+
+  // Draw all tags at side margins
+  drawTagBubbles(seqCtx, holds, seqMoves, seqImg.width, seqImg.height, `${cr},${cg},${cb}`);
 }
 
 function seqUpdateStatus() {
@@ -3429,12 +3482,11 @@ function replayDraw() {
       replayCtx_.textBaseline = 'alphabetic';
     }
 
-    // Tag as speech bubble
-    if (shown && moves[moveNum] && moves[moveNum].tag) {
-      const bubbleColor = isCurrent ? '0,229,255' : `${cr},${cg},${cb}`;
-      drawBubble(replayCtx_, h.x, h.y + h.r, moves[moveNum].tag, bubbleColor, 0.8);
-    }
   }
+
+  // Draw tags at side margins (only up to current step)
+  const visibleMoves = moves.slice(0, step + 1);
+  drawTagBubbles(replayCtx_, holds, visibleMoves, replayImg.width, replayImg.height, `${cr},${cg},${cb}`);
 
   // Update controls
   document.getElementById('replay-counter').textContent =
