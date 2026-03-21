@@ -509,28 +509,39 @@
     <button class="pbtn" onclick="seqResetZoom()"><span class="pbtn-icon">[ ]</span>1:1</button>
   </div>
   <div id="seq-tag-bar">
-    <span class="tag-label">what kind of move?</span>
-    <span class="tag-btn skip" onclick="seqTagMove(null)">SKIP</span>
-    <span class="tag-btn" onclick="seqTagMove('Match')">Match</span>
-    <span class="tag-btn" onclick="seqTagMove('Crimp')">Crimp</span>
-    <span class="tag-btn" onclick="seqTagMove('Pinch')">Pinch</span>
-    <span class="tag-btn" onclick="seqTagMove('Sloper')">Sloper</span>
-    <span class="tag-btn" onclick="seqTagMove('Pocket')">Pocket</span>
-    <span class="tag-btn" onclick="seqTagMove('Undercling')">Undercling</span>
-    <span class="tag-btn" onclick="seqTagMove('Gaston')">Gaston</span>
-    <span class="tag-btn" onclick="seqTagMove('Jug')">Jug</span>
-    <span class="tag-btn" onclick="seqTagMove('Dyno')">Dyno</span>
-    <span class="tag-btn" onclick="seqTagMove('Deadpoint')">Deadpoint</span>
-    <span class="tag-btn" onclick="seqTagMove('Bump')">Bump</span>
-    <span class="tag-btn" onclick="seqTagMove('Cross')">Cross</span>
-    <span class="tag-btn" onclick="seqTagMove('Campus')">Campus</span>
-    <span class="tag-btn" onclick="seqTagMove('Mantle')">Mantle</span>
-    <span class="tag-btn" onclick="seqTagMove('Heel hook')">Heel hook</span>
-    <span class="tag-btn" onclick="seqTagMove('Toe hook')">Toe hook</span>
-    <span class="tag-btn" onclick="seqTagMove('Smear')">Smear</span>
-    <span class="tag-btn" onclick="seqTagMove('Flag')">Flag</span>
-    <span class="tag-btn" onclick="seqTagMove('Drop knee')">Drop knee</span>
-    <span class="tag-btn" onclick="seqTagMove('Bicycle')">Bicycle</span>
+    <div id="seq-limb-row">
+      <span class="tag-label">which limb?</span>
+      <span class="tag-btn skip" onclick="seqPickLimb(null)">SKIP ALL</span>
+      <span class="tag-btn" onclick="seqPickLimb('LH')" style="color:#44aaff;border-color:#44aaff;">LH</span>
+      <span class="tag-btn" onclick="seqPickLimb('RH')" style="color:#44aaff;border-color:#44aaff;">RH</span>
+      <span class="tag-btn" onclick="seqPickLimb('LF')" style="color:#ffcc44;border-color:#ffcc44;">LF</span>
+      <span class="tag-btn" onclick="seqPickLimb('RF')" style="color:#ffcc44;border-color:#ffcc44;">RF</span>
+      <span class="tag-btn" onclick="seqPickLimb('Match')" style="color:#44ff44;border-color:#44ff44;">Match</span>
+      <span class="tag-btn" onclick="seqPickLimb('Foot match')" style="color:#ffcc44;border-color:#ffcc44;">Ft match</span>
+    </div>
+    <div id="seq-move-row" style="display:none;">
+      <span class="tag-label">move type? (optional)</span>
+      <span class="tag-btn skip" onclick="seqPickMove(null)">SKIP</span>
+      <span class="tag-btn" onclick="seqPickMove('Crimp')">Crimp</span>
+      <span class="tag-btn" onclick="seqPickMove('Pinch')">Pinch</span>
+      <span class="tag-btn" onclick="seqPickMove('Sloper')">Sloper</span>
+      <span class="tag-btn" onclick="seqPickMove('Pocket')">Pocket</span>
+      <span class="tag-btn" onclick="seqPickMove('Undercling')">Undercling</span>
+      <span class="tag-btn" onclick="seqPickMove('Gaston')">Gaston</span>
+      <span class="tag-btn" onclick="seqPickMove('Jug')">Jug</span>
+      <span class="tag-btn" onclick="seqPickMove('Dyno')">Dyno</span>
+      <span class="tag-btn" onclick="seqPickMove('Deadpoint')">Deadpoint</span>
+      <span class="tag-btn" onclick="seqPickMove('Bump')">Bump</span>
+      <span class="tag-btn" onclick="seqPickMove('Cross')">Cross</span>
+      <span class="tag-btn" onclick="seqPickMove('Campus')">Campus</span>
+      <span class="tag-btn" onclick="seqPickMove('Mantle')">Mantle</span>
+      <span class="tag-btn" onclick="seqPickMove('Heel hook')">Heel hook</span>
+      <span class="tag-btn" onclick="seqPickMove('Toe hook')">Toe hook</span>
+      <span class="tag-btn" onclick="seqPickMove('Smear')">Smear</span>
+      <span class="tag-btn" onclick="seqPickMove('Flag')">Flag</span>
+      <span class="tag-btn" onclick="seqPickMove('Drop knee')">Drop knee</span>
+      <span class="tag-btn" onclick="seqPickMove('Bicycle')">Bicycle</span>
+    </div>
   </div>
 </div>
 
@@ -575,7 +586,7 @@
 </div>
 
 <script>
-const BUILD_VER = '53';
+const BUILD_VER = '54';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3225,11 +3236,36 @@ function seqTapHold(imgX, imgY) {
   }
 }
 
-function seqTagMove(tag) {
+let seqPendingLimb = null;
+
+function seqPickLimb(limb) {
   if (seqPendingHold < 0) return;
-  seqMoves.push({ holdIdx: seqPendingHold, tag: tag || null });
+  if (limb === null) {
+    // Skip all — add move with no tag
+    seqMoves.push({ holdIdx: seqPendingHold, tag: null });
+    seqPendingHold = -1;
+    document.getElementById('seq-tag-bar').classList.remove('active');
+    document.getElementById('seq-limb-row').style.display = '';
+    document.getElementById('seq-move-row').style.display = 'none';
+    seqDraw();
+    seqUpdateStatus();
+    return;
+  }
+  seqPendingLimb = limb;
+  // Show move type row
+  document.getElementById('seq-limb-row').style.display = 'none';
+  document.getElementById('seq-move-row').style.display = '';
+}
+
+function seqPickMove(move) {
+  if (seqPendingHold < 0) return;
+  const tag = move ? seqPendingLimb + ' ' + move : seqPendingLimb;
+  seqMoves.push({ holdIdx: seqPendingHold, tag: tag });
   seqPendingHold = -1;
+  seqPendingLimb = null;
   document.getElementById('seq-tag-bar').classList.remove('active');
+  document.getElementById('seq-limb-row').style.display = '';
+  document.getElementById('seq-move-row').style.display = 'none';
   seqDraw();
   seqUpdateStatus();
 }
@@ -3237,7 +3273,10 @@ function seqTagMove(tag) {
 function seqUndo() {
   if (seqPendingHold >= 0) {
     seqPendingHold = -1;
+    seqPendingLimb = null;
     document.getElementById('seq-tag-bar').classList.remove('active');
+    document.getElementById('seq-limb-row').style.display = '';
+    document.getElementById('seq-move-row').style.display = 'none';
     seqDraw();
     return;
   }
@@ -3251,7 +3290,10 @@ function seqUndo() {
 function seqClear() {
   seqMoves = [];
   seqPendingHold = -1;
+  seqPendingLimb = null;
   document.getElementById('seq-tag-bar').classList.remove('active');
+  document.getElementById('seq-limb-row').style.display = '';
+  document.getElementById('seq-move-row').style.display = 'none';
   seqDraw();
   seqUpdateStatus();
 }
