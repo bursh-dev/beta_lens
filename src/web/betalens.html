@@ -575,7 +575,7 @@
 </div>
 
 <script>
-const BUILD_VER = '51';
+const BUILD_VER = '52';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3007,33 +3007,79 @@ function seqScreenToImg(clientX, clientY) {
   };
 }
 
+// Draw a speech-bubble tooltip at (x, y) pointing up
+function drawBubble(ctx, x, y, text, color, bgAlpha) {
+  const fs = Math.max(14, Math.min(20, y * 0.02));
+  ctx.font = `bold ${fs}px Courier New`;
+  const tw = ctx.measureText(text).width;
+  const pad = 6, tipH = 6, bh = fs + pad * 2, bw = tw + pad * 2;
+  const bx = x - bw / 2, by = y + tipH + 2;
+
+  // Bubble background with rounded corners
+  const r = 5;
+  ctx.fillStyle = `rgba(0,0,0,${bgAlpha || 0.75})`;
+  ctx.beginPath();
+  ctx.moveTo(bx + r, by);
+  // Tip pointing up
+  ctx.lineTo(x - 5, by);
+  ctx.lineTo(x, y + 2);
+  ctx.lineTo(x + 5, by);
+  ctx.lineTo(bx + bw - r, by);
+  ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
+  ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
+  ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
+  ctx.arcTo(bx, by, bx + r, by, r);
+  ctx.closePath();
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = `rgba(${color},0.5)`;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Text
+  ctx.fillStyle = `rgb(${color})`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, by + bh / 2);
+  ctx.textAlign = 'start';
+  ctx.textBaseline = 'alphabetic';
+}
+
 function seqDraw() {
   if (!seqImg) return;
   seqCtx.clearRect(0, 0, seqCanvas.width, seqCanvas.height);
+  seqCtx.imageSmoothingEnabled = true;
+  seqCtx.imageSmoothingQuality = 'high';
   seqCtx.drawImage(seqImg, 0, 0);
 
   const rc = ROUTE_COLORS[seqRoute.colorIdx || 0];
   const [cr, cg, cb] = rc.rgb;
   const holds = seqRoute.holds;
+  const lineW = Math.max(1.5, Math.min(seqImg.width, seqImg.height) * 0.003);
 
-  // Draw connecting lines first
+  // Draw gentle connecting lines
+  seqCtx.save();
+  seqCtx.strokeStyle = `rgba(255,255,255,0.25)`;
+  seqCtx.lineWidth = lineW;
+  seqCtx.lineCap = 'round';
+  seqCtx.setLineDash([]);
   for (let i = 1; i < seqMoves.length; i++) {
     const prev = holds[seqMoves[i - 1].holdIdx];
     const curr = holds[seqMoves[i].holdIdx];
-    seqCtx.strokeStyle = `rgba(${cr},${cg},${cb},0.6)`;
-    seqCtx.lineWidth = 3;
-    seqCtx.setLineDash([8, 6]);
     seqCtx.beginPath();
     seqCtx.moveTo(prev.x, prev.y);
-    seqCtx.lineTo(curr.x, curr.y);
+    // Gentle curve via midpoint offset
+    const mx = (prev.x + curr.x) / 2 + (curr.y - prev.y) * 0.08;
+    const my = (prev.y + curr.y) / 2 - (curr.x - prev.x) * 0.08;
+    seqCtx.quadraticCurveTo(mx, my, curr.x, curr.y);
     seqCtx.stroke();
-    seqCtx.setLineDash([]);
   }
+  seqCtx.restore();
 
   // Draw all holds
   for (let i = 0; i < holds.length; i++) {
     const h = holds[i];
-    // Find move index for this hold
     let moveIdx = -1;
     for (let m = 0; m < seqMoves.length; m++) {
       if (seqMoves[m].holdIdx === i) { moveIdx = m; break; }
@@ -3041,44 +3087,60 @@ function seqDraw() {
     const inSeq = moveIdx !== -1;
     const isLast = seqMoves.length > 0 && seqMoves[seqMoves.length - 1].holdIdx === i;
     const isPending = seqPendingHold === i;
-    const alpha = inSeq || isPending ? 0.55 : 0.15;
+    const alpha = inSeq || isPending ? 0.45 : 0.12;
 
     // Glow for last move or pending
     if (isLast || isPending) {
-      const glow = seqCtx.createRadialGradient(h.x, h.y, h.r * 0.3, h.x, h.y, h.r * 1.5);
-      glow.addColorStop(0, `rgba(255,255,255,0.4)`);
+      const glow = seqCtx.createRadialGradient(h.x, h.y, h.r * 0.2, h.x, h.y, h.r * 1.6);
+      glow.addColorStop(0, `rgba(255,255,255,0.35)`);
       glow.addColorStop(1, `rgba(255,255,255,0)`);
       seqCtx.beginPath();
-      seqCtx.arc(h.x, h.y, h.r * 1.5, 0, Math.PI * 2);
+      seqCtx.arc(h.x, h.y, h.r * 1.6, 0, Math.PI * 2);
       seqCtx.fillStyle = glow;
       seqCtx.fill();
     }
 
-    // Fill
+    // Soft fill
+    const grad = seqCtx.createRadialGradient(h.x, h.y, h.r * 0.2, h.x, h.y, h.r);
+    grad.addColorStop(0, `rgba(${cr},${cg},${cb},${alpha * 1.2})`);
+    grad.addColorStop(1, `rgba(${cr},${cg},${cb},${alpha * 0.5})`);
     seqCtx.beginPath();
     seqCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    seqCtx.fillStyle = `rgba(${cr},${cg},${cb},${alpha})`;
+    seqCtx.fillStyle = grad;
     seqCtx.fill();
 
-    // Border
+    // Thin border
     seqCtx.beginPath();
     seqCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    seqCtx.strokeStyle = `rgba(${cr},${cg},${cb},${inSeq ? 0.9 : 0.3})`;
-    seqCtx.lineWidth = 2;
+    seqCtx.strokeStyle = `rgba(${cr},${cg},${cb},${inSeq ? 0.7 : 0.2})`;
+    seqCtx.lineWidth = 1.5;
     seqCtx.stroke();
 
-    // Label: move number + tag if in sequence, hold type if not
-    const fontSize = Math.max(18, h.r * 0.5);
-    seqCtx.font = `bold ${fontSize}px Courier New`;
-    const numLabel = inSeq ? String(moveIdx + 1) : (HOLD_SHORT[h.kind] || '');
-    const tag = inSeq && seqMoves[moveIdx].tag ? seqMoves[moveIdx].tag : '';
-    const fullLabel = tag ? numLabel + ' ' + tag : numLabel;
-    if (fullLabel) {
-      const lw = seqCtx.measureText(fullLabel).width;
-      seqCtx.fillStyle = `rgba(0,0,0,0.6)`;
-      seqCtx.fillRect(h.x - lw / 2 - 3, h.y + h.r + 3, lw + 6, fontSize + 3);
-      seqCtx.fillStyle = inSeq ? '#fff' : `rgba(${cr},${cg},${cb},0.5)`;
-      seqCtx.fillText(fullLabel, h.x - lw / 2, h.y + h.r + fontSize + 1);
+    // Move number inside the hold
+    if (inSeq) {
+      const numFs = Math.max(16, h.r * 0.6);
+      seqCtx.font = `bold ${numFs}px Courier New`;
+      seqCtx.fillStyle = `rgba(255,255,255,0.9)`;
+      seqCtx.textAlign = 'center';
+      seqCtx.textBaseline = 'middle';
+      seqCtx.fillText(String(moveIdx + 1), h.x, h.y);
+      seqCtx.textAlign = 'start';
+      seqCtx.textBaseline = 'alphabetic';
+    } else if (!inSeq && !isPending) {
+      // Dim hold type letter
+      const fs = Math.max(10, h.r * 0.35);
+      seqCtx.font = `${fs}px Courier New`;
+      seqCtx.fillStyle = `rgba(${cr},${cg},${cb},0.3)`;
+      seqCtx.textAlign = 'center';
+      seqCtx.textBaseline = 'middle';
+      seqCtx.fillText(HOLD_SHORT[h.kind] || '', h.x, h.y);
+      seqCtx.textAlign = 'start';
+      seqCtx.textBaseline = 'alphabetic';
+    }
+
+    // Tag as speech bubble below the hold
+    if (inSeq && seqMoves[moveIdx].tag) {
+      drawBubble(seqCtx, h.x, h.y + h.r, seqMoves[moveIdx].tag, `${cr},${cg},${cb}`, 0.8);
     }
   }
 }
@@ -3288,6 +3350,8 @@ async function startReplay(idx) {
 function replayDraw() {
   if (!replayImg) return;
   replayCtx_.clearRect(0, 0, replayCanvas_.width, replayCanvas_.height);
+  replayCtx_.imageSmoothingEnabled = true;
+  replayCtx_.imageSmoothingQuality = 'high';
   replayCtx_.drawImage(replayImg, 0, 0);
 
   const rc = ROUTE_COLORS[replayRoute.colorIdx || 0];
@@ -3295,67 +3359,80 @@ function replayDraw() {
   const holds = replayRoute.holds;
   const moves = replaySeq.moves;
   const step = replayStep_;
+  const lineW = Math.max(1.5, Math.min(replayImg.width, replayImg.height) * 0.003);
 
-  // Draw connecting lines up to current step
+  // Gentle connecting curves up to current step
+  replayCtx_.save();
+  replayCtx_.strokeStyle = `rgba(255,255,255,0.25)`;
+  replayCtx_.lineWidth = lineW;
+  replayCtx_.lineCap = 'round';
+  replayCtx_.setLineDash([]);
   for (let i = 1; i <= step && i < moves.length; i++) {
     const prev = holds[moves[i - 1].holdIdx];
     const curr = holds[moves[i].holdIdx];
-    replayCtx_.strokeStyle = `rgba(${cr},${cg},${cb},0.6)`;
-    replayCtx_.lineWidth = 3;
-    replayCtx_.setLineDash([8, 6]);
     replayCtx_.beginPath();
     replayCtx_.moveTo(prev.x, prev.y);
-    replayCtx_.lineTo(curr.x, curr.y);
+    const mx = (prev.x + curr.x) / 2 + (curr.y - prev.y) * 0.08;
+    const my = (prev.y + curr.y) / 2 - (curr.x - prev.x) * 0.08;
+    replayCtx_.quadraticCurveTo(mx, my, curr.x, curr.y);
     replayCtx_.stroke();
-    replayCtx_.setLineDash([]);
   }
+  replayCtx_.restore();
 
   // Draw all holds
   for (let i = 0; i < holds.length; i++) {
     const h = holds[i];
-    // Check if this hold appears in moves up to current step
     let moveNum = -1;
     for (let m = 0; m <= step && m < moves.length; m++) {
       if (moves[m].holdIdx === i) moveNum = m;
     }
     const shown = moveNum >= 0;
     const isCurrent = step < moves.length && moves[step].holdIdx === i;
-    const alpha = shown ? 0.55 : 0.1;
+    const alpha = shown ? 0.45 : 0.08;
 
     // Current hold glow
     if (isCurrent) {
-      const glow = replayCtx_.createRadialGradient(h.x, h.y, h.r * 0.3, h.x, h.y, h.r * 1.8);
-      glow.addColorStop(0, `rgba(255,255,255,0.5)`);
-      glow.addColorStop(1, `rgba(255,255,255,0)`);
+      const glow = replayCtx_.createRadialGradient(h.x, h.y, h.r * 0.2, h.x, h.y, h.r * 2);
+      glow.addColorStop(0, `rgba(0,229,255,0.45)`);
+      glow.addColorStop(1, `rgba(0,229,255,0)`);
       replayCtx_.beginPath();
-      replayCtx_.arc(h.x, h.y, h.r * 1.8, 0, Math.PI * 2);
+      replayCtx_.arc(h.x, h.y, h.r * 2, 0, Math.PI * 2);
       replayCtx_.fillStyle = glow;
       replayCtx_.fill();
     }
 
+    // Soft fill
+    const grad = replayCtx_.createRadialGradient(h.x, h.y, h.r * 0.2, h.x, h.y, h.r);
+    grad.addColorStop(0, `rgba(${cr},${cg},${cb},${alpha * 1.2})`);
+    grad.addColorStop(1, `rgba(${cr},${cg},${cb},${alpha * 0.5})`);
     replayCtx_.beginPath();
     replayCtx_.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    replayCtx_.fillStyle = `rgba(${cr},${cg},${cb},${alpha})`;
+    replayCtx_.fillStyle = grad;
     replayCtx_.fill();
 
+    // Thin border
     replayCtx_.beginPath();
     replayCtx_.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    replayCtx_.strokeStyle = `rgba(${cr},${cg},${cb},${shown ? 0.9 : 0.2})`;
-    replayCtx_.lineWidth = 2;
+    replayCtx_.strokeStyle = `rgba(${cr},${cg},${cb},${shown ? 0.7 : 0.15})`;
+    replayCtx_.lineWidth = 1.5;
     replayCtx_.stroke();
 
-    // Number + tag label
+    // Move number centered in hold
     if (shown) {
-      const fontSize = Math.max(18, h.r * 0.5);
-      replayCtx_.font = `bold ${fontSize}px Courier New`;
-      const moveData = moves[moveNum];
-      const tag = moveData && moveData.tag ? moveData.tag : '';
-      const label = tag ? (moveNum + 1) + ' ' + tag : String(moveNum + 1);
-      const lw = replayCtx_.measureText(label).width;
-      replayCtx_.fillStyle = `rgba(0,0,0,0.6)`;
-      replayCtx_.fillRect(h.x - lw / 2 - 3, h.y + h.r + 3, lw + 6, fontSize + 3);
-      replayCtx_.fillStyle = isCurrent ? '#00e5ff' : '#fff';
-      replayCtx_.fillText(label, h.x - lw / 2, h.y + h.r + fontSize + 1);
+      const numFs = Math.max(16, h.r * 0.6);
+      replayCtx_.font = `bold ${numFs}px Courier New`;
+      replayCtx_.fillStyle = isCurrent ? '#00e5ff' : 'rgba(255,255,255,0.85)';
+      replayCtx_.textAlign = 'center';
+      replayCtx_.textBaseline = 'middle';
+      replayCtx_.fillText(String(moveNum + 1), h.x, h.y);
+      replayCtx_.textAlign = 'start';
+      replayCtx_.textBaseline = 'alphabetic';
+    }
+
+    // Tag as speech bubble
+    if (shown && moves[moveNum] && moves[moveNum].tag) {
+      const bubbleColor = isCurrent ? '0,229,255' : `${cr},${cg},${cb}`;
+      drawBubble(replayCtx_, h.x, h.y + h.r, moves[moveNum].tag, bubbleColor, 0.8);
     }
   }
 
