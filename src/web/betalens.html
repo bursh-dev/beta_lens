@@ -586,7 +586,7 @@
 </div>
 
 <script>
-const BUILD_VER = '61';
+const BUILD_VER = '62';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3050,7 +3050,7 @@ function _drawTagsSide(ctx, tags, side, imgW, imgH, color, fs, pad, bh, gap, mar
   for (let i = 0; i < tags.length; i++) {
     const t = tags[i];
     const op = opacityFn ? opacityFn(t) : 1;
-    const label = (t.moveNum + 1) + ' ' + expandTag(t.tag);
+    const label = expandTag(t.tag);
     ctx.font = `${fs}px Courier New`;
     const tw = ctx.measureText(label).width;
     const bw = tw + pad * 2;
@@ -3106,8 +3106,8 @@ function drawTagBubbles(ctx, holds, moves, imgW, imgH, color) {
   }
   if (!tagged.length) return;
 
-  const fs = Math.max(8, Math.min(11, imgW * 0.01));
-  const pad = 4, bh = fs + pad * 2, gap = 3, margin = imgW * 0.015;
+  const fs = Math.max(11, Math.min(16, imgW * 0.015));
+  const pad = 6, bh = fs + pad * 2, gap = 4, margin = imgW * 0.015;
 
   const left = tagged.filter(t => t.hx > imgW * 0.4).sort((a, b) => a.hy - b.hy);
   const right = tagged.filter(t => t.hx <= imgW * 0.4).sort((a, b) => a.hy - b.hy);
@@ -3128,8 +3128,8 @@ function drawTagBubblesWithOpacity(ctx, holds, moves, imgW, imgH, color) {
   }
   if (!tagged.length) return;
 
-  const fs = Math.max(8, Math.min(11, imgW * 0.01));
-  const pad = 4, bh = fs + pad * 2, gap = 3, margin = imgW * 0.015;
+  const fs = Math.max(11, Math.min(16, imgW * 0.015));
+  const pad = 6, bh = fs + pad * 2, gap = 4, margin = imgW * 0.015;
 
   const left = tagged.filter(t => t.hx > imgW * 0.4).sort((a, b) => a.hy - b.hy);
   const right = tagged.filter(t => t.hx <= imgW * 0.4).sort((a, b) => a.hy - b.hy);
