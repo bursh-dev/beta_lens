@@ -358,6 +358,24 @@
     font-size: 13px; color: #888; min-width: 60px; text-align: center;
   }
 
+  /* Move tag bar */
+  #seq-tag-bar {
+    display: none; position: absolute; bottom: 0; left: 56px; right: 0;
+    background: rgba(0,0,0,0.92); border-top: 1px solid #444;
+    padding: 8px 6px; z-index: 15; overflow-x: auto; white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  #seq-tag-bar.active { display: block; }
+  .tag-btn {
+    display: inline-block; padding: 6px 10px; margin: 2px 3px;
+    border: 1px solid #555; border-radius: 6px; color: #ccc;
+    font-family: 'Courier New', monospace; font-size: 11px;
+    background: rgba(255,255,255,0.08); cursor: pointer;
+  }
+  .tag-btn:active { background: rgba(255,255,255,0.2); }
+  .tag-btn.skip { color: #666; border-color: #444; }
+  .tag-label { font-size: 10px; color: #666; display: block; margin-bottom: 4px; padding-left: 4px; }
+
   /* Loading overlay */
   #loading {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -490,6 +508,30 @@
     <button class="pbtn" onclick="seqClear()"><span class="pbtn-icon">X</span>CLR</button>
     <button class="pbtn" onclick="seqResetZoom()"><span class="pbtn-icon">[ ]</span>1:1</button>
   </div>
+  <div id="seq-tag-bar">
+    <span class="tag-label">what kind of move?</span>
+    <span class="tag-btn skip" onclick="seqTagMove(null)">SKIP</span>
+    <span class="tag-btn" onclick="seqTagMove('Match')">Match</span>
+    <span class="tag-btn" onclick="seqTagMove('Crimp')">Crimp</span>
+    <span class="tag-btn" onclick="seqTagMove('Pinch')">Pinch</span>
+    <span class="tag-btn" onclick="seqTagMove('Sloper')">Sloper</span>
+    <span class="tag-btn" onclick="seqTagMove('Pocket')">Pocket</span>
+    <span class="tag-btn" onclick="seqTagMove('Undercling')">Undercling</span>
+    <span class="tag-btn" onclick="seqTagMove('Gaston')">Gaston</span>
+    <span class="tag-btn" onclick="seqTagMove('Jug')">Jug</span>
+    <span class="tag-btn" onclick="seqTagMove('Dyno')">Dyno</span>
+    <span class="tag-btn" onclick="seqTagMove('Deadpoint')">Deadpoint</span>
+    <span class="tag-btn" onclick="seqTagMove('Bump')">Bump</span>
+    <span class="tag-btn" onclick="seqTagMove('Cross')">Cross</span>
+    <span class="tag-btn" onclick="seqTagMove('Campus')">Campus</span>
+    <span class="tag-btn" onclick="seqTagMove('Mantle')">Mantle</span>
+    <span class="tag-btn" onclick="seqTagMove('Heel hook')">Heel hook</span>
+    <span class="tag-btn" onclick="seqTagMove('Toe hook')">Toe hook</span>
+    <span class="tag-btn" onclick="seqTagMove('Smear')">Smear</span>
+    <span class="tag-btn" onclick="seqTagMove('Flag')">Flag</span>
+    <span class="tag-btn" onclick="seqTagMove('Drop knee')">Drop knee</span>
+    <span class="tag-btn" onclick="seqTagMove('Bicycle')">Bicycle</span>
+  </div>
 </div>
 
 <!-- Sequence Replay Screen -->
@@ -533,7 +575,7 @@
 </div>
 
 <script>
-const BUILD_VER = '50';
+const BUILD_VER = '51';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -2892,7 +2934,8 @@ let seqImg = null;
 let seqCanvas, seqCtx;
 let seqRoute = null;
 let seqRouteIdx = -1;
-let seqMoves = []; // [holdIdx, holdIdx, ...]
+let seqMoves = []; // [{holdIdx, tag}, ...]
+let seqPendingHold = -1; // hold waiting for tag
 let seqZoom = 1, seqPanX = 0, seqPanY = 0, seqBaseScale = 1;
 let seqPinching = false, seqDragging = false;
 let seqPinchStartDist = 0, seqPinchStartZoom = 1;
@@ -2917,6 +2960,7 @@ async function startSequence(idx) {
   seqRoute = r;
   seqRouteIdx = idx;
   seqMoves = [];
+  seqPendingHold = -1;
   seqCanvas = document.getElementById('seq-canvas');
   seqCtx = seqCanvas.getContext('2d');
   seqImg = new Image();
@@ -2974,8 +3018,8 @@ function seqDraw() {
 
   // Draw connecting lines first
   for (let i = 1; i < seqMoves.length; i++) {
-    const prev = holds[seqMoves[i - 1]];
-    const curr = holds[seqMoves[i]];
+    const prev = holds[seqMoves[i - 1].holdIdx];
+    const curr = holds[seqMoves[i].holdIdx];
     seqCtx.strokeStyle = `rgba(${cr},${cg},${cb},0.6)`;
     seqCtx.lineWidth = 3;
     seqCtx.setLineDash([8, 6]);
@@ -2989,13 +3033,18 @@ function seqDraw() {
   // Draw all holds
   for (let i = 0; i < holds.length; i++) {
     const h = holds[i];
-    const moveIdx = seqMoves.indexOf(i);
+    // Find move index for this hold
+    let moveIdx = -1;
+    for (let m = 0; m < seqMoves.length; m++) {
+      if (seqMoves[m].holdIdx === i) { moveIdx = m; break; }
+    }
     const inSeq = moveIdx !== -1;
-    const isLast = seqMoves.length > 0 && seqMoves[seqMoves.length - 1] === i;
-    const alpha = inSeq ? 0.55 : 0.15;
+    const isLast = seqMoves.length > 0 && seqMoves[seqMoves.length - 1].holdIdx === i;
+    const isPending = seqPendingHold === i;
+    const alpha = inSeq || isPending ? 0.55 : 0.15;
 
-    // Glow for last move
-    if (isLast) {
+    // Glow for last move or pending
+    if (isLast || isPending) {
       const glow = seqCtx.createRadialGradient(h.x, h.y, h.r * 0.3, h.x, h.y, h.r * 1.5);
       glow.addColorStop(0, `rgba(255,255,255,0.4)`);
       glow.addColorStop(1, `rgba(255,255,255,0)`);
@@ -3018,16 +3067,18 @@ function seqDraw() {
     seqCtx.lineWidth = 2;
     seqCtx.stroke();
 
-    // Label: move number if in sequence, hold type if not
+    // Label: move number + tag if in sequence, hold type if not
     const fontSize = Math.max(18, h.r * 0.5);
     seqCtx.font = `bold ${fontSize}px Courier New`;
-    const label = inSeq ? String(moveIdx + 1) : (HOLD_SHORT[h.kind] || '');
-    if (label) {
-      const lw = seqCtx.measureText(label).width;
+    const numLabel = inSeq ? String(moveIdx + 1) : (HOLD_SHORT[h.kind] || '');
+    const tag = inSeq && seqMoves[moveIdx].tag ? seqMoves[moveIdx].tag : '';
+    const fullLabel = tag ? numLabel + ' ' + tag : numLabel;
+    if (fullLabel) {
+      const lw = seqCtx.measureText(fullLabel).width;
       seqCtx.fillStyle = `rgba(0,0,0,0.6)`;
       seqCtx.fillRect(h.x - lw / 2 - 3, h.y + h.r + 3, lw + 6, fontSize + 3);
       seqCtx.fillStyle = inSeq ? '#fff' : `rgba(${cr},${cg},${cb},0.5)`;
-      seqCtx.fillText(label, h.x - lw / 2, h.y + h.r + fontSize + 1);
+      seqCtx.fillText(fullLabel, h.x - lw / 2, h.y + h.r + fontSize + 1);
     }
   }
 }
@@ -3041,6 +3092,7 @@ function seqUpdateStatus() {
 }
 
 function seqTapHold(imgX, imgY) {
+  if (seqPendingHold >= 0) return; // waiting for tag
   const holds = seqRoute.holds;
   let bestIdx = -1, bestDist = Infinity;
   for (let i = 0; i < holds.length; i++) {
@@ -3052,13 +3104,28 @@ function seqTapHold(imgX, imgY) {
     }
   }
   if (bestIdx >= 0) {
-    seqMoves.push(bestIdx);
+    seqPendingHold = bestIdx;
     seqDraw();
-    seqUpdateStatus();
+    document.getElementById('seq-tag-bar').classList.add('active');
   }
 }
 
+function seqTagMove(tag) {
+  if (seqPendingHold < 0) return;
+  seqMoves.push({ holdIdx: seqPendingHold, tag: tag || null });
+  seqPendingHold = -1;
+  document.getElementById('seq-tag-bar').classList.remove('active');
+  seqDraw();
+  seqUpdateStatus();
+}
+
 function seqUndo() {
+  if (seqPendingHold >= 0) {
+    seqPendingHold = -1;
+    document.getElementById('seq-tag-bar').classList.remove('active');
+    seqDraw();
+    return;
+  }
   if (seqMoves.length > 0) {
     seqMoves.pop();
     seqDraw();
@@ -3068,6 +3135,8 @@ function seqUndo() {
 
 function seqClear() {
   seqMoves = [];
+  seqPendingHold = -1;
+  document.getElementById('seq-tag-bar').classList.remove('active');
   seqDraw();
   seqUpdateStatus();
 }
@@ -3084,7 +3153,7 @@ async function seqSave() {
   if (!r.sequences) r.sequences = [];
   r.sequences.push({
     createdAt: new Date().toISOString(),
-    moves: seqMoves.map(idx => ({ holdIdx: idx }))
+    moves: seqMoves.map(m => ({ holdIdx: m.holdIdx, tag: m.tag || null }))
   });
   await saveRoutes(routes);
   showSaveToast('BETA SAVED');
@@ -3275,11 +3344,13 @@ function replayDraw() {
     replayCtx_.lineWidth = 2;
     replayCtx_.stroke();
 
-    // Number label
+    // Number + tag label
     if (shown) {
       const fontSize = Math.max(18, h.r * 0.5);
       replayCtx_.font = `bold ${fontSize}px Courier New`;
-      const label = String(moveNum + 1);
+      const moveData = moves[moveNum];
+      const tag = moveData && moveData.tag ? moveData.tag : '';
+      const label = tag ? (moveNum + 1) + ' ' + tag : String(moveNum + 1);
       const lw = replayCtx_.measureText(label).width;
       replayCtx_.fillStyle = `rgba(0,0,0,0.6)`;
       replayCtx_.fillRect(h.x - lw / 2 - 3, h.y + h.r + 3, lw + 6, fontSize + 3);
