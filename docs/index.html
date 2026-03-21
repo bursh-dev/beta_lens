@@ -586,7 +586,7 @@
 </div>
 
 <script>
-const BUILD_VER = '63';
+const BUILD_VER = '64';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3201,7 +3201,7 @@ function seqDraw() {
     const inSeq = moveIdx !== -1;
     const isLast = seqMoves.length > 0 && seqMoves[seqMoves.length - 1].holdIdx === i;
     const isPending = seqPendingHold === i;
-    const alpha = inSeq || isPending ? 0.45 : 0.12;
+    const alpha = inSeq || isPending ? 0.5 : 0.35;
 
     // Glow for last move or pending
     if (isLast || isPending) {
@@ -3214,20 +3214,27 @@ function seqDraw() {
       seqCtx.fill();
     }
 
-    // Soft fill
-    const grad = seqCtx.createRadialGradient(h.x, h.y, h.r * 0.2, h.x, h.y, h.r);
-    grad.addColorStop(0, `rgba(${cr},${cg},${cb},${alpha * 1.2})`);
-    grad.addColorStop(1, `rgba(${cr},${cg},${cb},${alpha * 0.5})`);
+    // Outer glow (like annotate screen)
+    const glowGrad = seqCtx.createRadialGradient(h.x, h.y, h.r * 0.3, h.x, h.y, h.r * 1.2);
+    glowGrad.addColorStop(0, `rgba(${cr},${cg},${cb},${alpha * 0.6})`);
+    glowGrad.addColorStop(0.7, `rgba(${cr},${cg},${cb},${alpha * 0.3})`);
+    glowGrad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
     seqCtx.beginPath();
-    seqCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    seqCtx.fillStyle = grad;
+    seqCtx.arc(h.x, h.y, h.r * 1.2, 0, Math.PI * 2);
+    seqCtx.fillStyle = glowGrad;
     seqCtx.fill();
 
-    // Thin border
+    // Solid fill
     seqCtx.beginPath();
     seqCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    seqCtx.strokeStyle = `rgba(${cr},${cg},${cb},${inSeq ? 0.7 : 0.2})`;
-    seqCtx.lineWidth = 1.5;
+    seqCtx.fillStyle = `rgba(${cr},${cg},${cb},${alpha})`;
+    seqCtx.fill();
+
+    // Border
+    seqCtx.beginPath();
+    seqCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+    seqCtx.strokeStyle = `rgba(${cr},${cg},${cb},${inSeq ? 0.8 : 0.5})`;
+    seqCtx.lineWidth = 2;
     seqCtx.stroke();
 
     // Move number inside the hold
@@ -3241,15 +3248,17 @@ function seqDraw() {
       seqCtx.textAlign = 'start';
       seqCtx.textBaseline = 'alphabetic';
     } else if (!inSeq && !isPending) {
-      // Dim hold type letter
-      const fs = Math.max(10, h.r * 0.35);
-      seqCtx.font = `${fs}px Courier New`;
-      seqCtx.fillStyle = `rgba(${cr},${cg},${cb},0.3)`;
-      seqCtx.textAlign = 'center';
-      seqCtx.textBaseline = 'middle';
-      seqCtx.fillText(HOLD_SHORT[h.kind] || '', h.x, h.y);
-      seqCtx.textAlign = 'start';
+      // Hold type label below
+      const fs = Math.max(14, h.r * 0.45);
+      seqCtx.font = `bold ${fs}px Courier New`;
+      const label = HOLD_SHORT[h.kind] || '';
+      const lw = seqCtx.measureText(label).width;
+      seqCtx.fillStyle = `rgba(0,0,0,0.5)`;
+      seqCtx.fillRect(h.x - lw / 2 - 3, h.y + h.r + 2, lw + 6, fs + 3);
+      seqCtx.fillStyle = `rgba(${cr},${cg},${cb},0.7)`;
+      seqCtx.textAlign = 'left';
       seqCtx.textBaseline = 'alphabetic';
+      seqCtx.fillText(label, h.x - lw / 2, h.y + h.r + fs + 1);
     }
 
   }
