@@ -586,7 +586,7 @@
 </div>
 
 <script>
-const BUILD_VER = '62';
+const BUILD_VER = '63';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3050,32 +3050,53 @@ function _drawTagsSide(ctx, tags, side, imgW, imgH, color, fs, pad, bh, gap, mar
   for (let i = 0; i < tags.length; i++) {
     const t = tags[i];
     const op = opacityFn ? opacityFn(t) : 1;
-    const label = expandTag(t.tag);
+    const expanded = expandTag(t.tag);
+    // Split into two lines: limb and move type
+    const parts = expanded.split(' — ');
+    const line1 = parts[0] || '';
+    const line2 = parts[1] || '';
+    const twoLines = line1 && line2;
+    const lineH = fs * 1.3;
+    const totalH = twoLines ? lineH * 2 + pad * 2 : bh;
+
     ctx.font = `${fs}px Courier New`;
-    const tw = ctx.measureText(label).width;
+    const tw1 = ctx.measureText(line1).width;
+    const tw2 = line2 ? ctx.measureText(line2).width : 0;
+    const tw = Math.max(tw1, tw2);
     const bw = tw + pad * 2;
-    const by = Math.min(imgH - bh - margin, Math.max(margin, startY));
+    const by = Math.min(imgH - totalH - margin, Math.max(margin, startY));
     const bx = side === 'left' ? margin : imgW - margin - bw;
 
     ctx.globalAlpha = op;
 
     // Pill bubble
-    const r = bh / 2;
+    const r = Math.min(totalH / 2, 8);
     ctx.fillStyle = 'rgba(0,0,0,0.7)';
     ctx.beginPath();
     ctx.moveTo(bx + r, by);
     ctx.lineTo(bx + bw - r, by);
-    ctx.arc(bx + bw - r, by + r, r, -Math.PI / 2, Math.PI / 2);
-    ctx.lineTo(bx + r, by + bh);
-    ctx.arc(bx + r, by + r, r, Math.PI / 2, -Math.PI / 2);
+    ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
+    ctx.arcTo(bx + bw, by + totalH, bx + bw - r, by + totalH, r);
+    ctx.arcTo(bx, by + totalH, bx, by + totalH - r, r);
+    ctx.arcTo(bx, by, bx + r, by, r);
     ctx.closePath();
     ctx.fill();
 
     // Text
-    ctx.fillStyle = `rgb(${color})`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, bx + pad, by + bh / 2);
+    if (twoLines) {
+      ctx.fillStyle = `rgb(${color})`;
+      ctx.font = `bold ${fs}px Courier New`;
+      ctx.fillText(line1, bx + pad, by + pad + lineH * 0.5);
+      ctx.fillStyle = `rgba(255,255,255,0.7)`;
+      ctx.font = `${fs}px Courier New`;
+      ctx.fillText(line2, bx + pad, by + pad + lineH * 1.5);
+    } else {
+      ctx.fillStyle = `rgb(${color})`;
+      ctx.font = `bold ${fs}px Courier New`;
+      ctx.fillText(line1, bx + pad, by + totalH / 2);
+    }
 
     // Thin line + arrowhead
     const lx = side === 'left' ? bx + bw : bx;
@@ -3091,7 +3112,7 @@ function _drawTagsSide(ctx, tags, side, imgW, imgH, color, fs, pad, bh, gap, mar
     drawArrow(ctx, lx, ly, t.hx, t.hy, arrSize * 2.5, '255,50,50', 0.9 * op);
 
     ctx.globalAlpha = 1;
-    startY = by + bh + gap;
+    startY = by + totalH + gap;
   }
 }
 
