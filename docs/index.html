@@ -586,7 +586,7 @@
 </div>
 
 <script>
-const BUILD_VER = '56';
+const BUILD_VER = '57';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3068,15 +3068,15 @@ function _drawTagsSide(ctx, tags, side, imgW, imgH, color, fs, pad, bh, gap, mar
     // Thin line + arrowhead
     const lx = side === 'left' ? bx + bw : bx;
     const ly = by + bh / 2;
-    ctx.strokeStyle = `rgba(${color},0.2)`;
-    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = `rgba(${color},0.35)`;
+    ctx.lineWidth = 1.2;
     ctx.setLineDash([]);
     ctx.beginPath();
     ctx.moveTo(lx, ly);
     ctx.lineTo(t.hx, t.hy);
     ctx.stroke();
 
-    drawArrow(ctx, lx, ly, t.hx, t.hy, arrSize, color, 0.4 * op);
+    drawArrow(ctx, lx, ly, t.hx, t.hy, arrSize * 1.8, color, 0.7 * op);
 
     ctx.globalAlpha = 1;
     startY = by + bh + gap;
@@ -3429,6 +3429,10 @@ let replayPlaying = false;
 let replayTimer = null;
 let replayImg = null;
 let replayCanvas_, replayCtx_;
+let rpZoom = 1, rpPanX = 0, rpPanY = 0, rpBaseScale = 1;
+let rpPinching = false, rpDragging = false;
+let rpPinchStartDist = 0, rpPinchStartZoom = 1;
+let rpDragStartX = 0, rpDragStartY = 0, rpPanStartX = 0, rpPanStartY = 0;
 
 async function startReplay(idx) {
   const routes = await getRoutes();
@@ -3446,13 +3450,9 @@ async function startReplay(idx) {
   replayImg = new Image();
   replayImg.onload = function() {
     showScreen('seq-replay');
-    const vp = document.getElementById('replay-viewport');
     replayCanvas_.width = replayImg.width;
     replayCanvas_.height = replayImg.height;
-    const s = Math.min(vp.offsetWidth / replayImg.width, vp.offsetHeight / replayImg.height);
-    const px = (vp.offsetWidth - replayImg.width * s) / 2;
-    const py = (vp.offsetHeight - replayImg.height * s) / 2;
-    replayCanvas_.style.transform = `translate(${px}px, ${py}px) scale(${s})`;
+    rpFitCanvas();
     replayDraw();
   };
   replayImg.src = r.anchor.dataUrl;
@@ -3592,6 +3592,83 @@ function replayBack() {
   replayImg = null;
   showMenu();
 }
+
+function rpFitCanvas() {
+  if (!replayImg) return;
+  const vp = document.getElementById('replay-viewport');
+  rpBaseScale = Math.min(vp.offsetWidth / replayImg.width, vp.offsetHeight / replayImg.height);
+  rpZoom = 1;
+  rpPanX = (vp.offsetWidth - replayImg.width * rpBaseScale) / 2;
+  rpPanY = (vp.offsetHeight - replayImg.height * rpBaseScale) / 2;
+  rpApplyTransform();
+}
+
+function rpApplyTransform() {
+  const vp = document.getElementById('replay-viewport');
+  const s = rpBaseScale * rpZoom;
+  const imgW = replayImg.width * s, imgH = replayImg.height * s;
+  const vpW = vp.offsetWidth, vpH = vp.offsetHeight;
+  const m = 0.2;
+  rpPanX = Math.max(-imgW * (1 - m), Math.min(vpW * (1 - m), rpPanX));
+  rpPanY = Math.max(-imgH * (1 - m), Math.min(vpH * (1 - m), rpPanY));
+  replayCanvas_.style.transform = `translate(${rpPanX}px, ${rpPanY}px) scale(${s})`;
+}
+
+// Replay zoom/pan touch handlers
+(function() {
+  const vp = document.getElementById('replay-viewport');
+  if (!vp) return;
+  function dist(t) {
+    const dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  vp.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 2) {
+      rpPinching = true; rpDragging = false;
+      rpPinchStartDist = dist(e.touches);
+      rpPinchStartZoom = rpZoom;
+      e.preventDefault();
+    } else if (e.touches.length === 1 && rpZoom > 1.05) {
+      rpDragging = true;
+      rpDragStartX = e.touches[0].clientX;
+      rpDragStartY = e.touches[0].clientY;
+      rpPanStartX = rpPanX;
+      rpPanStartY = rpPanY;
+    }
+  }, { passive: false });
+  vp.addEventListener('touchmove', function(e) {
+    if (rpPinching && e.touches.length === 2) {
+      e.preventDefault();
+      const d = dist(e.touches);
+      const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const rect = vp.getBoundingClientRect();
+      const cx = mx - rect.left, cy = my - rect.top;
+      const newZoom = Math.max(1, Math.min(rpPinchStartZoom * (d / rpPinchStartDist), 8));
+      rpPanX = cx - (cx - rpPanX) * (newZoom / rpZoom);
+      rpPanY = cy - (cy - rpPanY) * (newZoom / rpZoom);
+      rpZoom = newZoom;
+      rpApplyTransform();
+    } else if (rpDragging && e.touches.length === 1) {
+      e.preventDefault();
+      rpPanX = rpPanStartX + (e.touches[0].clientX - rpDragStartX);
+      rpPanY = rpPanStartY + (e.touches[0].clientY - rpDragStartY);
+      rpApplyTransform();
+    }
+  }, { passive: false });
+  vp.addEventListener('touchend', function(e) {
+    if (e.touches.length < 2) rpPinching = false;
+    if (e.touches.length < 1) rpDragging = false;
+  });
+  // Double tap to reset zoom
+  let lastTap = 0;
+  vp.addEventListener('touchend', function(e) {
+    if (e.touches.length > 0) return;
+    const now = Date.now();
+    if (now - lastTap < 300) { rpFitCanvas(); e.preventDefault(); }
+    lastTap = now;
+  });
+})();
 </script>
 </body>
 </html>
