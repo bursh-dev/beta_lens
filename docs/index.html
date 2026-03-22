@@ -506,6 +506,8 @@
     </div>
     <button class="pbtn" onclick="seqUndo()"><span class="pbtn-icon">&larr;</span>UNDO</button>
     <button class="pbtn" onclick="seqClear()"><span class="pbtn-icon">X</span>CLR</button>
+    <button class="pbtn" id="seq-sit-btn" onclick="seqToggleSit()" style="color:#ff9800;border-color:#ff9800;font-size:8px;"><span class="pbtn-icon">&#9660;</span>STAND</button>
+    <button class="pbtn" id="seq-crux-btn" onclick="seqToggleCrux()" style="color:#f44336;font-size:8px;"><span class="pbtn-icon">!</span>CRUX</button>
     <button class="pbtn" onclick="seqResetZoom()"><span class="pbtn-icon">[ ]</span>1:1</button>
   </div>
   <div id="seq-tag-bar">
@@ -586,7 +588,7 @@
 </div>
 
 <script>
-const BUILD_VER = '65';
+const BUILD_VER = '66';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -2972,6 +2974,8 @@ async function startSequence(idx) {
   seqRouteIdx = idx;
   seqMoves = [];
   seqPendingHold = -1;
+  seqSitStart = false;
+  seqCruxMoveIdx = -1;
   seqCanvas = document.getElementById('seq-canvas');
   seqCtx = seqCanvas.getContext('2d');
   seqImg = new Image();
@@ -3270,9 +3274,11 @@ function seqDraw() {
 function seqUpdateStatus() {
   document.getElementById('seq-moves-count').textContent = seqMoves.length;
   const n = seqMoves.length;
+  const sit = seqSitStart ? ' [SIT]' : '';
+  const crux = seqCruxMoveIdx >= 0 ? ` [CRUX:${seqCruxMoveIdx + 1}]` : '';
   document.getElementById('seq-status').textContent =
     n === 0 ? '// TAP HOLDS IN CLIMBING ORDER' :
-    `// ${n} MOVE${n > 1 ? 'S' : ''} — TAP NEXT HOLD`;
+    `// ${n} MOVE${n > 1 ? 'S' : ''}${sit}${crux} — TAP NEXT`;
 }
 
 function seqTapHold(imgX, imgY) {
@@ -3295,6 +3301,8 @@ function seqTapHold(imgX, imgY) {
 }
 
 let seqPendingLimb = null;
+let seqSitStart = false;
+let seqCruxMoveIdx = -1; // which move is the crux (-1 = none)
 
 function seqPickLimb(limb) {
   if (seqPendingHold < 0) return;
@@ -3324,6 +3332,31 @@ function seqPickMove(move) {
   document.getElementById('seq-tag-bar').classList.remove('active');
   document.getElementById('seq-limb-row').style.display = '';
   document.getElementById('seq-move-row').style.display = 'none';
+  seqDraw();
+  seqUpdateStatus();
+}
+
+function seqToggleSit() {
+  seqSitStart = !seqSitStart;
+  const btn = document.getElementById('seq-sit-btn');
+  btn.innerHTML = seqSitStart
+    ? '<span class="pbtn-icon">&#9660;</span>SIT'
+    : '<span class="pbtn-icon">&#9660;</span>STAND';
+  btn.style.color = seqSitStart ? '#ff9800' : '#888';
+  btn.style.borderColor = seqSitStart ? '#ff9800' : '#555';
+}
+
+function seqToggleCrux() {
+  if (seqMoves.length === 0) { alert('Record some moves first'); return; }
+  if (seqCruxMoveIdx >= 0) {
+    // Clear crux
+    seqCruxMoveIdx = -1;
+    document.getElementById('seq-crux-btn').style.borderColor = '';
+  } else {
+    // Mark last move as crux
+    seqCruxMoveIdx = seqMoves.length - 1;
+    document.getElementById('seq-crux-btn').style.borderColor = '#f44336';
+  }
   seqDraw();
   seqUpdateStatus();
 }
@@ -3368,7 +3401,9 @@ async function seqSave() {
   if (!r.sequences) r.sequences = [];
   r.sequences.push({
     createdAt: new Date().toISOString(),
-    moves: seqMoves.map(m => ({ holdIdx: m.holdIdx, tag: m.tag || null }))
+    moves: seqMoves.map(m => ({ holdIdx: m.holdIdx, tag: m.tag || null })),
+    sitStart: seqSitStart,
+    cruxMoveIdx: seqCruxMoveIdx >= 0 ? seqCruxMoveIdx : null
   });
   await saveRoutes(routes);
   showSaveToast('BETA SAVED');
@@ -3502,35 +3537,68 @@ async function startReplay(idx) {
 
 function replayDraw() {
   if (!replayImg) return;
-  replayCtx_.clearRect(0, 0, replayCanvas_.width, replayCanvas_.height);
-  replayCtx_.imageSmoothingEnabled = true;
-  replayCtx_.imageSmoothingQuality = 'high';
-  replayCtx_.drawImage(replayImg, 0, 0);
+  const ctx = replayCtx_;
+  ctx.clearRect(0, 0, replayCanvas_.width, replayCanvas_.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(replayImg, 0, 0);
 
   const rc = ROUTE_COLORS[replayRoute.colorIdx || 0];
   const [cr, cg, cb] = rc.rgb;
   const holds = replayRoute.holds;
   const moves = replaySeq.moves;
   const step = replayStep_;
+  const isFirst = step === 0;
+  const isLast = step === moves.length - 1;
   const lineW = Math.max(1.5, Math.min(replayImg.width, replayImg.height) * 0.003);
+  const pulse = 0.4 + 0.5 * Math.sin(Date.now() * 0.006);
+  const isSitStart = replaySeq.sitStart;
+  const cruxIdx = typeof replaySeq.cruxMoveIdx === 'number' ? replaySeq.cruxMoveIdx : -1;
 
   // Gentle connecting curves up to current step
-  replayCtx_.save();
-  replayCtx_.strokeStyle = `rgba(255,255,255,0.25)`;
-  replayCtx_.lineWidth = lineW;
-  replayCtx_.lineCap = 'round';
-  replayCtx_.setLineDash([]);
+  ctx.save();
+  ctx.strokeStyle = `rgba(255,255,255,0.25)`;
+  ctx.lineWidth = lineW;
+  ctx.lineCap = 'round';
   for (let i = 1; i <= step && i < moves.length; i++) {
     const prev = holds[moves[i - 1].holdIdx];
     const curr = holds[moves[i].holdIdx];
-    replayCtx_.beginPath();
-    replayCtx_.moveTo(prev.x, prev.y);
+    ctx.beginPath();
+    ctx.moveTo(prev.x, prev.y);
     const mx = (prev.x + curr.x) / 2 + (curr.y - prev.y) * 0.08;
     const my = (prev.y + curr.y) / 2 - (curr.x - prev.x) * 0.08;
-    replayCtx_.quadraticCurveTo(mx, my, curr.x, curr.y);
-    replayCtx_.stroke();
+    ctx.quadraticCurveTo(mx, my, curr.x, curr.y);
+    ctx.stroke();
   }
-  replayCtx_.restore();
+  ctx.restore();
+
+  // Helper: draw tip text near a hold
+  function drawTip(h, text, above, color) {
+    const fs = Math.max(16, Math.min(24, replayImg.width * 0.022));
+    ctx.font = `bold ${fs}px Courier New`;
+    const tw = ctx.measureText(text).width;
+    const pad = 8, bh = fs + pad * 2;
+    const bw = tw + pad * 2;
+    const bx = h.x - bw / 2;
+    const by = above ? h.y - h.r - bh - 8 : h.y + h.r + 8;
+    const r = 6;
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.beginPath();
+    ctx.moveTo(bx + r, by);
+    ctx.lineTo(bx + bw - r, by);
+    ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
+    ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
+    ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
+    ctx.arcTo(bx, by, bx + r, by, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, h.x, by + bh / 2);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+  }
 
   // Draw all holds
   for (let i = 0; i < holds.length; i++) {
@@ -3541,68 +3609,92 @@ function replayDraw() {
     }
     const shown = moveNum >= 0;
     const isCurrent = step < moves.length && moves[step].holdIdx === i;
-    const hasTag = shown && moves[moveNum] && moves[moveNum].tag;
-    const alpha = shown ? 0.45 : 0.08;
+    const isPast = shown && !isCurrent;
+    const isTop = isLast && isCurrent;
+    const isCrux = cruxIdx >= 0 && moveNum === cruxIdx;
 
-    // Pulsing ring for tagged holds (visible tags only — last 3)
-    if (hasTag && moveNum >= step - 2) {
-      const pulse = 0.4 + 0.5 * Math.sin(Date.now() * 0.006 + moveNum);
-      replayCtx_.beginPath();
-      replayCtx_.arc(h.x, h.y, h.r * 1.5, 0, Math.PI * 2);
-      replayCtx_.strokeStyle = `rgba(255,50,50,${pulse})`;
-      replayCtx_.lineWidth = 3;
-      replayCtx_.stroke();
+    // Determine hold color
+    let hr, hg, hb, alpha;
+    if (isTop) {
+      hr = 68; hg = 255; hb = 68; alpha = 0.6; // strong green
+    } else if (isPast) {
+      hr = 255; hg = 60; hb = 60; alpha = 0.45; // red for passed holds
+    } else if (isCurrent) {
+      hr = cr; hg = cg; hb = cb; alpha = 0.5;
+    } else {
+      hr = cr; hg = cg; hb = cb; alpha = 0.08;
     }
 
-    // Current hold glow
+    // Blink effect for current hold (including start)
     if (isCurrent) {
-      const glow = replayCtx_.createRadialGradient(h.x, h.y, h.r * 0.2, h.x, h.y, h.r * 2);
-      glow.addColorStop(0, `rgba(0,229,255,0.45)`);
-      glow.addColorStop(1, `rgba(0,229,255,0)`);
-      replayCtx_.beginPath();
-      replayCtx_.arc(h.x, h.y, h.r * 2, 0, Math.PI * 2);
-      replayCtx_.fillStyle = glow;
-      replayCtx_.fill();
+      const blinkAlpha = 0.3 + 0.4 * Math.sin(Date.now() * 0.008);
+      const glow = ctx.createRadialGradient(h.x, h.y, h.r * 0.2, h.x, h.y, h.r * 2);
+      glow.addColorStop(0, `rgba(${hr},${hg},${hb},${blinkAlpha})`);
+      glow.addColorStop(1, `rgba(${hr},${hg},${hb},0)`);
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.r * 2, 0, Math.PI * 2);
+      ctx.fillStyle = glow;
+      ctx.fill();
+
+      // Pulsing ring
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.r * 1.4, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(${hr},${hg},${hb},${pulse})`;
+      ctx.lineWidth = 3;
+      ctx.stroke();
     }
 
-    // Soft fill
-    const grad = replayCtx_.createRadialGradient(h.x, h.y, h.r * 0.2, h.x, h.y, h.r);
-    grad.addColorStop(0, `rgba(${cr},${cg},${cb},${alpha * 1.2})`);
-    grad.addColorStop(1, `rgba(${cr},${cg},${cb},${alpha * 0.5})`);
-    replayCtx_.beginPath();
-    replayCtx_.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    replayCtx_.fillStyle = grad;
-    replayCtx_.fill();
+    // Fill
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${hr},${hg},${hb},${alpha})`;
+    ctx.fill();
 
-    // Thin border
-    replayCtx_.beginPath();
-    replayCtx_.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    replayCtx_.strokeStyle = `rgba(${cr},${cg},${cb},${shown ? 0.7 : 0.15})`;
-    replayCtx_.lineWidth = 1.5;
-    replayCtx_.stroke();
+    // Border
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${hr},${hg},${hb},${shown ? 0.8 : 0.15})`;
+    ctx.lineWidth = shown ? 2.5 : 1;
+    ctx.stroke();
 
-    // Move number centered in hold
+    // Move number inside hold
     if (shown) {
       const numFs = Math.max(16, h.r * 0.6);
-      replayCtx_.font = `bold ${numFs}px Courier New`;
-      replayCtx_.fillStyle = isCurrent ? '#00e5ff' : 'rgba(255,255,255,0.85)';
-      replayCtx_.textAlign = 'center';
-      replayCtx_.textBaseline = 'middle';
-      replayCtx_.fillText(String(moveNum + 1), h.x, h.y);
-      replayCtx_.textAlign = 'start';
-      replayCtx_.textBaseline = 'alphabetic';
+      ctx.font = `bold ${numFs}px Courier New`;
+      ctx.fillStyle = isTop ? '#44ff44' : isPast ? '#ff5555' : '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(moveNum + 1), h.x, h.y);
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
     }
-
   }
 
-  // Draw last 3 tags with fade — current=full, previous=fading
-  const recentCount = 3;
-  const recentMoves = [];
-  for (let i = Math.max(0, step - recentCount + 1); i <= step && i < moves.length; i++) {
-    const age = step - i; // 0=current, 1=previous, 2=oldest shown
-    recentMoves.push({ ...moves[i], _moveNum: i, _opacity: age === 0 ? 1.0 : age === 1 ? 0.5 : 0.25 });
+  // Draw tip for current move
+  if (step < moves.length) {
+    const currentMove = moves[step];
+    const h = holds[currentMove.holdIdx];
+    const isCruxMove = cruxIdx === step;
+
+    if (isFirst && isLast) {
+      // Only one move
+      drawTip(h, 'TOP', true, '#44ff44');
+    } else if (isFirst) {
+      // Start hold — tip below
+      const startLabel = isSitStart ? 'SIT START' : 'START';
+      drawTip(h, startLabel, false, '#ffcc44');
+    } else if (isLast) {
+      // Last hold — TOP
+      drawTip(h, 'TOP', true, '#44ff44');
+    } else if (isCruxMove) {
+      // Crux move
+      const tag = currentMove.tag ? expandTag(currentMove.tag) : '';
+      drawTip(h, 'CRUX' + (tag ? ' — ' + tag : ''), true, '#ff5555');
+    } else if (currentMove.tag) {
+      // Regular move with tag — tip above
+      drawTip(h, expandTag(currentMove.tag), true, '#fff');
+    }
   }
-  drawTagBubblesWithOpacity(replayCtx_, holds, recentMoves, replayImg.width, replayImg.height, `${cr},${cg},${cb}`);
 
   // Update controls
   document.getElementById('replay-counter').textContent =
