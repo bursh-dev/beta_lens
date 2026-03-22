@@ -588,7 +588,7 @@
 </div>
 
 <script>
-const BUILD_VER = '66';
+const BUILD_VER = '67';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3610,7 +3610,7 @@ function replayDraw() {
     const shown = moveNum >= 0;
     const isCurrent = step < moves.length && moves[step].holdIdx === i;
     const isPast = shown && !isCurrent;
-    const isTop = isLast && isCurrent;
+    const isTop = isLast && moves[moves.length - 1].holdIdx === i && moveNum === moves.length - 1;
     const isCrux = cruxIdx >= 0 && moveNum === cruxIdx;
 
     // Determine hold color
