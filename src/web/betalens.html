@@ -594,7 +594,7 @@
 </div>
 
 <script>
-const BUILD_VER = '75';
+const BUILD_VER = '76';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -1245,11 +1245,11 @@ function renderAnnotatedImage(route) {
       const [cr, cg, cb] = rc.rgb;
       for (const h of route.holds) {
         const hx = h.x, hy = h.y, hr = Math.max(h.r * 2, 20);
-        // Circle outline only — clean for game zoom
+        // Clean circle outline only
         ctx.beginPath();
         ctx.arc(hx, hy, hr, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(${cr},${cg},${cb},0.9)`;
-        ctx.lineWidth = Math.max(3, hr * 0.15);
+        ctx.strokeStyle = `rgb(${cr},${cg},${cb})`;
+        ctx.lineWidth = 2;
         ctx.stroke();
       }
       resolve(c.toDataURL('image/jpeg', 0.85));
