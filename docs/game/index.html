@@ -239,11 +239,11 @@
 
 <script>
 const ROUTES = [
-  { "img": "images/route_1.jpg", "grade": "V5", "sit": false, "moves": [{"x1":0.634,"y1":0.596,"x2":0.523,"y2":0.535},{"x1":0.634,"y1":0.596,"x2":0.557,"y2":0.358},{"x1":0.663,"y1":0.341,"x2":0.653,"y2":0.233}], "crux": 1 },
-  { "img": "images/route_2.jpg", "grade": "V6", "sit": false, "moves": [{"x1":0.451,"y1":0.47,"x2":0.488,"y2":0.39},{"x1":0.488,"y1":0.39,"x2":0.244,"y2":0.403},{"x1":0.244,"y1":0.403,"x2":0.451,"y2":0.47}], "crux": 1 },
-  { "img": "images/route_3.jpg", "grade": "V5", "sit": true, "moves": [{"x1":0.403,"y1":0.688,"x2":0.358,"y2":0.763},{"x1":0.395,"y1":0.556,"x2":0.573,"y2":0.525},{"x1":0.573,"y1":0.525,"x2":0.646,"y2":0.403}], "crux": 2 },
-  { "img": "images/route_4.jpg", "grade": "V6", "sit": false, "moves": [{"x1":0.452,"y1":0.558,"x2":0.574,"y2":0.679},{"x1":0.574,"y1":0.679,"x2":0.529,"y2":0.325},{"x1":0.529,"y1":0.325,"x2":0.452,"y2":0.558}], "crux": 1 },
-  { "img": "images/route_5.jpg", "grade": "V4", "sit": false, "moves": [{"x1":0.464,"y1":0.472,"x2":0.345,"y2":0.618},{"x1":0.63,"y1":0.458,"x2":0.6,"y2":0.302},{"x1":0.6,"y1":0.302,"x2":0.575,"y2":0.261}], "crux": 1 }
+  {"img": "images/route_1.jpg", "grade": "V5", "sit": false, "moves": [{"x1": 0.634, "y1": 0.596, "x2": 0.523, "y2": 0.535}, {"x1": 0.634, "y1": 0.596, "x2": 0.557, "y2": 0.358}, {"x1": 0.663, "y1": 0.341, "x2": 0.653, "y2": 0.233}], "crux": 1},
+  {"img": "images/route_2.jpg", "grade": "V6", "sit": false, "moves": [{"x1": 0.451, "y1": 0.47, "x2": 0.488, "y2": 0.39}, {"x1": 0.488, "y1": 0.39, "x2": 0.244, "y2": 0.403}, {"x1": 0.244, "y1": 0.403, "x2": 0.451, "y2": 0.47}], "crux": 1},
+  {"img": "images/route_3.jpg", "grade": "V5", "sit": true, "moves": [{"x1": 0.403, "y1": 0.688, "x2": 0.358, "y2": 0.763}, {"x1": 0.395, "y1": 0.556, "x2": 0.573, "y2": 0.525}, {"x1": 0.573, "y1": 0.525, "x2": 0.646, "y2": 0.403}], "crux": 2},
+  {"img": "images/route_4.jpg", "grade": "V6", "sit": false, "moves": [{"x1": 0.452, "y1": 0.558, "x2": 0.574, "y2": 0.679}, {"x1": 0.574, "y1": 0.679, "x2": 0.529, "y2": 0.325}, {"x1": 0.529, "y1": 0.325, "x2": 0.452, "y2": 0.558}], "crux": 1},
+  {"img": "images/route_5.jpg", "grade": "V4", "sit": false, "moves": [{"x1": 0.464, "y1": 0.472, "x2": 0.345, "y2": 0.618}, {"x1": 0.63, "y1": 0.458, "x2": 0.6, "y2": 0.302}, {"x1": 0.6, "y1": 0.302, "x2": 0.575, "y2": 0.261}], "crux": 1}
 ];
 
 const GRADES = ["V4", "V5", "V6"];
@@ -545,41 +545,23 @@ function drawMovesOnCanvas(route, highlightIdx) {
       else color = '#555';
     }
 
-    // Line
+    // Thin line between holds
     ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(3, Math.min(w, h) * 0.006);
+    ctx.lineWidth = Math.max(1.5, Math.min(w, h) * 0.003);
     ctx.setLineDash([]);
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.stroke();
 
-    // Endpoints
-    const r = Math.max(5, Math.min(w, h) * 0.012);
+    // Tiny dots at endpoints
+    const r = Math.max(3, Math.min(w, h) * 0.005);
     [{ x: x1, y: y1 }, { x: x2, y: y2 }].forEach(function(p) {
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
     });
-
-    // Number label at midpoint
-    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-    const fontSize = Math.max(14, Math.min(w, h) * 0.03);
-    ctx.font = 'bold ' + fontSize + 'px Courier New';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const label = String(displayIdx + 1);
-    const tw = ctx.measureText(label).width;
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.beginPath();
-    ctx.arc(mx, my, tw * 0.9, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = color;
-    ctx.fillText(label, mx, my);
   });
 }
 

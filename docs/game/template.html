@@ -539,41 +539,23 @@ function drawMovesOnCanvas(route, highlightIdx) {
       else color = '#555';
     }
 
-    // Line
+    // Thin line between holds
     ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(3, Math.min(w, h) * 0.006);
+    ctx.lineWidth = Math.max(1.5, Math.min(w, h) * 0.003);
     ctx.setLineDash([]);
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.stroke();
 
-    // Endpoints
-    const r = Math.max(5, Math.min(w, h) * 0.012);
+    // Tiny dots at endpoints
+    const r = Math.max(3, Math.min(w, h) * 0.005);
     [{ x: x1, y: y1 }, { x: x2, y: y2 }].forEach(function(p) {
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
     });
-
-    // Number label at midpoint
-    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-    const fontSize = Math.max(14, Math.min(w, h) * 0.03);
-    ctx.font = 'bold ' + fontSize + 'px Courier New';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const label = String(displayIdx + 1);
-    const tw = ctx.measureText(label).width;
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.beginPath();
-    ctx.arc(mx, my, tw * 0.9, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = color;
-    ctx.fillText(label, mx, my);
   });
 }
 
