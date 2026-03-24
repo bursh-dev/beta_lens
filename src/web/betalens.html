@@ -591,7 +591,7 @@
 </div>
 
 <script>
-const BUILD_VER = '69';
+const BUILD_VER = '70';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -1165,7 +1165,7 @@ async function showMenu() {
           `</div>` +
           `<div class="ri-btns">` +
             `<button class="ri-btn" onclick="event.stopPropagation();startAnnotate(${i})">Edit</button>` +
-            `<button class="ri-btn" onclick="event.stopPropagation();selectRoute(${i})">Track</button>` +
+            `<button class="ri-btn" onclick="event.stopPropagation();selectRoute(${i})" style="color:${r.extraAnchors && r.extraAnchors.length ? '#76ff03' : ''};border-color:${r.extraAnchors && r.extraAnchors.length ? '#76ff03' : ''};">${r.extraAnchors && r.extraAnchors.length ? '✓ Track' : 'Track'}</button>` +
             `<button class="ri-btn" onclick="event.stopPropagation();startSequence(${i})" style="color:${r.sequences && r.sequences.length ? '#76ff03' : '#00e5ff'};border-color:${r.sequences && r.sequences.length ? '#76ff03' : '#00e5ff'};">${r.sequences && r.sequences.length ? '▶ Beta' : 'Beta'}</button>` +
             `<button class="ri-btn ri-del" onclick="event.stopPropagation();deleteRoute(${i})">X</button>` +
           `</div>` +
