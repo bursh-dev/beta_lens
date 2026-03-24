@@ -529,7 +529,9 @@ function drawMovesOnCanvas(route, highlightIdx) {
   moveOrder.forEach(function(origIdx, displayIdx) {
     const m = route.moves[origIdx];
     if (!m) return;
-    const cx = m.x2 * w, cy = m.y2 * h;
+    // Midpoint between the two holds
+    const mx = (m.x1 + m.x2) / 2 * w;
+    const my = (m.y1 + m.y2) / 2 * h;
 
     let color = MOVE_LINE_COLOR;
     if (highlightIdx !== undefined) {
@@ -538,23 +540,20 @@ function drawMovesOnCanvas(route, highlightIdx) {
       else color = '#555';
     }
 
-    // Letter label at hold center
-    const fontSize = Math.max(18, Math.min(w, h) * 0.035);
+    // Letter label at midpoint between holds
+    const fontSize = Math.max(16, Math.min(w, h) * 0.03);
     ctx.font = 'bold ' + fontSize + 'px Courier New';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const label = CRUX_LABELS[displayIdx];
     const tw = ctx.measureText(label).width;
-    const bgR = Math.max(tw / 2 + 4, fontSize / 2 + 3);
+    const bgR = Math.max(tw / 2 + 3, fontSize / 2 + 2);
     ctx.beginPath();
-    ctx.arc(cx, cy, bgR, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.arc(mx, my, bgR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fill();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.stroke();
     ctx.fillStyle = color;
-    ctx.fillText(label, cx, cy);
+    ctx.fillText(label, mx, my);
     ctx.textAlign = 'start';
     ctx.textBaseline = 'alphabetic';
   });
