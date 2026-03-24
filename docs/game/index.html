@@ -185,7 +185,7 @@
 <div id="splash-screen">
   <h1>GUESS THE GRADE</h1>
   <div style="font-size:13px; color:#999; margin:20px 24px 0; line-height:1.7; text-align:left;">
-    <p>You'll see 4 bouldering routes with holds marked on the wall.</p>
+    <p>You'll see 5 bouldering routes with holds marked on the wall.</p>
     <p style="margin-top:12px;">Your job? Guess the grade, whether it's a sit start, and find the crux move.</p>
     <p style="margin-top:12px; color:#777;">Some say the grade is in the holds — their size, spacing, how they sit on the wall. Others just guess and hope for the best.</p>
     <p style="margin-top:12px; color:#2196f3; font-size:12px;">Tip: pinch to zoom in on the holds, double-tap to reset.</p>
@@ -235,17 +235,18 @@
 </div>
 
 <a class="back-link" href="../">BetaLens</a>
-<div class="game-ver">v11</div>
+<div class="game-ver">v12</div>
 
 <script>
 const ROUTES = [
   {"img": "images/route_1.jpg", "grade": "V5", "sit": false, "moves": [{"x1": 0.226, "y1": 0.699, "x2": 0.634, "y2": 0.596}, {"x1": 0.557, "y1": 0.358, "x2": 0.663, "y2": 0.341}, {"x1": 0.728, "y1": 0.189, "x2": 0.728, "y2": 0.189}], "crux": 1},
   {"img": "images/route_2.jpg", "grade": "V6", "sit": false, "moves": [{"x1": 0.894, "y1": 0.745, "x2": 0.651, "y2": 0.774}, {"x1": 0.244, "y1": 0.403, "x2": 0.451, "y2": 0.47}, {"x1": 0.282, "y1": 0.152, "x2": 0.282, "y2": 0.152}], "crux": 1},
   {"img": "images/route_3.jpg", "grade": "V5", "sit": true, "moves": [{"x1": 0.573, "y1": 0.525, "x2": 0.619, "y2": 0.643}, {"x1": 0.646, "y1": 0.403, "x2": 0.779, "y2": 0.506}, {"x1": 0.657, "y1": 0.274, "x2": 0.657, "y2": 0.274}], "crux": 1},
-  {"img": "images/route_4.jpg", "grade": "V6", "sit": false, "moves": [{"x1": 0.452, "y1": 0.558, "x2": 0.574, "y2": 0.679}, {"x1": 0.529, "y1": 0.325, "x2": 0.529, "y2": 0.325}, {"x1": 0.44, "y1": 0.271, "x2": 0.44, "y2": 0.271}], "crux": 1}
+  {"img": "images/route_4.jpg", "grade": "V6", "sit": false, "moves": [{"x1": 0.452, "y1": 0.558, "x2": 0.574, "y2": 0.679}, {"x1": 0.529, "y1": 0.325, "x2": 0.529, "y2": 0.325}, {"x1": 0.44, "y1": 0.271, "x2": 0.44, "y2": 0.271}], "crux": 1},
+  {"img": "images/route_5.jpg", "grade": "V4", "sit": false, "moves": [{"x1": 0.464, "y1": 0.472, "x2": 0.345, "y2": 0.618}, {"x1": 0.6, "y1": 0.302, "x2": 0.575, "y2": 0.261}, {"x1": 0.513, "y1": 0.23, "x2": 0.513, "y2": 0.23}], "crux": 1}
 ];
 
-const GRADES = ["V5", "V6"];
+const GRADES = ["V4", "V5", "V6"];
 
 let order = [];
 let current = 0;
