@@ -592,7 +592,7 @@
 </div>
 
 <script>
-const BUILD_VER = '73';
+const BUILD_VER = '74';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -1243,31 +1243,12 @@ function renderAnnotatedImage(route) {
       const [cr, cg, cb] = rc.rgb;
       for (const h of route.holds) {
         const hx = h.x, hy = h.y, hr = Math.max(h.r * 2, 20);
-        // Glow
-        ctx.beginPath();
-        ctx.arc(hx, hy, hr + 6, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${cr},${cg},${cb},0.25)`;
-        ctx.fill();
-        // Fill
+        // Circle outline only — clean for game zoom
         ctx.beginPath();
         ctx.arc(hx, hy, hr, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${cr},${cg},${cb},0.35)`;
-        ctx.fill();
-        // Border
-        ctx.beginPath();
-        ctx.arc(hx, hy, hr, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(${cr},${cg},${cb},0.85)`;
-        ctx.lineWidth = Math.max(2, hr * 0.12);
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},0.9)`;
+        ctx.lineWidth = Math.max(3, hr * 0.15);
         ctx.stroke();
-        // Label
-        const fs = Math.max(12, hr * 0.6);
-        ctx.font = `bold ${fs}px Courier New`;
-        const label = HOLD_SHORT[h.kind] || h.kind[0].toUpperCase();
-        const lw = ctx.measureText(label).width;
-        ctx.fillStyle = 'rgba(0,0,0,0.65)';
-        ctx.fillRect(hx - lw / 2 - 3, hy + hr + 2, lw + 6, fs + 4);
-        ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
-        ctx.fillText(label, hx - lw / 2, hy + hr + fs + 2);
       }
       resolve(c.toDataURL('image/jpeg', 0.85));
     };
