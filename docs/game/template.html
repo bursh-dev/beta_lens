@@ -833,56 +833,35 @@ function getPunchline(s) {
 }
 
 function downloadRoutes() {
-  const cols = Math.min(3, ROUTES.length);
-  const rows = Math.ceil(ROUTES.length / cols);
-  const thumbSize = 400;
-  const labelH = 48;
-  const pad = 8;
-  const cw = cols * thumbSize + (cols + 1) * pad;
-  const ch = rows * (thumbSize + labelH) + (rows + 1) * pad;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = cw;
-  canvas.height = ch;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#111';
-  ctx.fillRect(0, 0, cw, ch);
-
+  // Download each route as a separate HQ image
   let loaded = 0;
   ROUTES.forEach(function(r, i) {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = function() {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const x = pad + col * (thumbSize + pad);
-      const y = pad + row * (thumbSize + labelH + pad);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
 
-      // Draw image fitted in square
-      const scale = Math.min(thumbSize / img.width, thumbSize / img.height);
-      const dw = img.width * scale;
-      const dh = img.height * scale;
-      ctx.fillStyle = '#222';
-      ctx.fillRect(x, y, thumbSize, thumbSize);
-      ctx.drawImage(img, x + (thumbSize - dw) / 2, y + (thumbSize - dh) / 2, dw, dh);
-
-      // Draw grade label
-      ctx.fillStyle = '#000';
-      ctx.fillRect(x, y + thumbSize, thumbSize, labelH);
+      // Grade label at bottom
+      const labelH = 48;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(0, img.height - labelH, img.width, labelH);
       ctx.fillStyle = '#ff8844';
       ctx.font = 'bold 28px Courier New';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const sitLabel = r.sit ? ' (sit)' : '';
-      ctx.fillText(r.grade + sitLabel, x + thumbSize / 2, y + thumbSize + labelH / 2);
+      ctx.fillText(r.grade + sitLabel, img.width / 2, img.height - labelH / 2);
+
+      const link = document.createElement('a');
+      link.download = 'route_' + (i + 1) + '_' + r.grade + '.jpg';
+      link.href = canvas.toDataURL('image/jpeg', 0.95);
+      link.click();
 
       loaded++;
-      if (loaded === ROUTES.length) {
-        const link = document.createElement('a');
-        link.download = 'routes.png';
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-      }
     };
     img.src = r.img;
   });
