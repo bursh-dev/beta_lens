@@ -560,6 +560,7 @@
     <button class="replay-btn" id="replay-play-btn" onclick="replayTogglePlay()">&#9654;</button>
     <button class="replay-btn" onclick="replayStep(1)">&rarr;</button>
     <span id="replay-counter">0 / 0</span>
+    <button class="replay-btn" id="replay-crux-btn" onclick="replayToggleCrux()" style="color:#f44336;border-color:transparent;font-size:11px;">!</button>
     <button class="replay-btn" onclick="replayReRecord()" style="color:#f44336;border-color:#f44336;font-size:11px;">REC</button>
     <button class="replay-btn" onclick="replayBack()">X</button>
   </div>
@@ -591,7 +592,7 @@
 </div>
 
 <script>
-const BUILD_VER = '71';
+const BUILD_VER = '72';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3692,6 +3693,7 @@ function replayDraw() {
   document.getElementById('replay-status').textContent =
     `// ${replayRoute.name || 'ROUTE'} ${replayRoute.grade || ''}${sitTag}${cruxTag}`;
   document.getElementById('replay-play-btn').textContent = replayPlaying ? '||' : '\u25B6';
+  replayUpdateCruxBtn();
 }
 
 function replayStep(dir) {
@@ -3728,7 +3730,35 @@ function replayBack() {
   showMenu();
 }
 
+async function replayToggleCrux() {
+  if (!replaySeq) return;
+  const current = replayStep_;
+  if (replaySeq.cruxMoveIdx === current) {
+    replaySeq.cruxMoveIdx = null;
+  } else {
+    replaySeq.cruxMoveIdx = current;
+  }
+  // Save immediately
+  const routes = await getRoutes();
+  const r = routes[replayRouteIdx];
+  if (r && r.sequences && r.sequences.length > 0) {
+    r.sequences[r.sequences.length - 1].cruxMoveIdx = replaySeq.cruxMoveIdx;
+    await saveRoutes(routes);
+    showSaveToast('CRUX ' + (replaySeq.cruxMoveIdx != null ? 'SET' : 'CLEARED'));
+  }
+  replayUpdateCruxBtn();
+  replayDraw();
+}
+
+function replayUpdateCruxBtn() {
+  const btn = document.getElementById('replay-crux-btn');
+  if (!btn) return;
+  const isCrux = replaySeq && replaySeq.cruxMoveIdx === replayStep_;
+  btn.style.borderColor = isCrux ? '#f44336' : 'transparent';
+}
+
 function replayReRecord() {
+  if (!confirm('Re-record beta?\nOld beta kept until you SAVE.')) return;
   replayPlaying = false;
   clearInterval(replayTimer);
   replayImg = null;
