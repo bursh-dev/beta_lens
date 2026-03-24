@@ -560,6 +560,7 @@
     <button class="replay-btn" id="replay-play-btn" onclick="replayTogglePlay()">&#9654;</button>
     <button class="replay-btn" onclick="replayStep(1)">&rarr;</button>
     <span id="replay-counter">0 / 0</span>
+    <button class="replay-btn" onclick="replayReRecord()" style="color:#f44336;border-color:#f44336;font-size:11px;">REC</button>
     <button class="replay-btn" onclick="replayBack()">X</button>
   </div>
 </div>
@@ -590,7 +591,7 @@
 </div>
 
 <script>
-const BUILD_VER = '68';
+const BUILD_VER = '69';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -1165,7 +1166,7 @@ async function showMenu() {
           `<div class="ri-btns">` +
             `<button class="ri-btn" onclick="event.stopPropagation();startAnnotate(${i})">Edit</button>` +
             `<button class="ri-btn" onclick="event.stopPropagation();selectRoute(${i})">Track</button>` +
-            `<button class="ri-btn" onclick="event.stopPropagation();startSequence(${i})" style="color:#00e5ff;border-color:#00e5ff;">Beta</button>` +
+            `<button class="ri-btn" onclick="event.stopPropagation();startSequence(${i})" style="color:${r.sequences && r.sequences.length ? '#76ff03' : '#00e5ff'};border-color:${r.sequences && r.sequences.length ? '#76ff03' : '#00e5ff'};">${r.sequences && r.sequences.length ? '▶ Beta' : 'Beta'}</button>` +
             `<button class="ri-btn ri-del" onclick="event.stopPropagation();deleteRoute(${i})">X</button>` +
           `</div>` +
         `</div>` +
@@ -2964,30 +2965,12 @@ async function startSequence(idx) {
     alert('Route needs holds and an image first');
     return;
   }
-  // If route already has a sequence, offer replay
+  // If route already has a sequence, go straight to replay
   if (r.sequences && r.sequences.length > 0) {
-    const action = confirm('This route has a recorded beta.\n\nOK = Replay it\nCancel = Record new');
-    if (action) {
-      startReplay(idx);
-      return;
-    }
+    startReplay(idx);
+    return;
   }
-  seqRoute = r;
-  seqRouteIdx = idx;
-  seqMoves = [];
-  seqPendingHold = -1;
-  seqSitStart = false;
-  seqCruxMoveIdx = -1;
-  seqCanvas = document.getElementById('seq-canvas');
-  seqCtx = seqCanvas.getContext('2d');
-  seqImg = new Image();
-  seqImg.onload = function() {
-    showScreen('seq-record');
-    seqFitCanvas();
-    seqDraw();
-    seqUpdateStatus();
-  };
-  seqImg.src = r.anchor.dataUrl;
+  startSequenceRecord(idx);
 }
 
 function seqFitCanvas() {
@@ -3513,6 +3496,8 @@ let rpPinching = false, rpDragging = false;
 let rpPinchStartDist = 0, rpPinchStartZoom = 1;
 let rpDragStartX = 0, rpDragStartY = 0, rpPanStartX = 0, rpPanStartY = 0;
 
+let replayRouteIdx = -1;
+
 async function startReplay(idx) {
   const routes = await getRoutes();
   const r = routes[idx];
@@ -3521,6 +3506,7 @@ async function startReplay(idx) {
     return;
   }
   replayRoute = r;
+  replayRouteIdx = idx;
   replaySeq = r.sequences[r.sequences.length - 1]; // latest
   replayStep_ = 0;
   replayPlaying = false;
@@ -3740,6 +3726,38 @@ function replayBack() {
   clearInterval(replayTimer);
   replayImg = null;
   showMenu();
+}
+
+function replayReRecord() {
+  replayPlaying = false;
+  clearInterval(replayTimer);
+  replayImg = null;
+  startSequenceRecord(replayRouteIdx);
+}
+
+async function startSequenceRecord(idx) {
+  const routes = await getRoutes();
+  const r = routes[idx];
+  if (!r || !r.holds || r.holds.length === 0 || !r.anchor || !r.anchor.dataUrl) {
+    alert('Route needs holds and an image first');
+    return;
+  }
+  seqRoute = r;
+  seqRouteIdx = idx;
+  seqMoves = [];
+  seqPendingHold = -1;
+  seqSitStart = false;
+  seqCruxMoveIdx = -1;
+  seqCanvas = document.getElementById('seq-canvas');
+  seqCtx = seqCanvas.getContext('2d');
+  seqImg = new Image();
+  seqImg.onload = function() {
+    showScreen('seq-record');
+    seqFitCanvas();
+    seqDraw();
+    seqUpdateStatus();
+  };
+  seqImg.src = r.anchor.dataUrl;
 }
 
 // Animation loop for pulsing effects in replay
