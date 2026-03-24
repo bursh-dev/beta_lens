@@ -510,6 +510,7 @@
     <button class="pbtn" onclick="seqClear()"><span class="pbtn-icon">X</span>CLR</button>
     <button class="pbtn" id="seq-sit-btn" onclick="seqToggleSit()" style="color:#ff9800;border-color:#ff9800;font-size:8px;"><span class="pbtn-icon">&#9660;</span>STAND</button>
     <button class="pbtn" id="seq-crux-btn" onclick="seqToggleCrux()" style="color:#f44336;font-size:8px;"><span class="pbtn-icon">!</span>CRUX</button>
+    <button class="pbtn" id="seq-fake-btn" onclick="seqToggleFake()" style="color:#ff9800;font-size:8px;"><span class="pbtn-icon">~</span>FAKE</button>
     <button class="pbtn" onclick="seqResetZoom()"><span class="pbtn-icon">[ ]</span>1:1</button>
   </div>
   <div id="seq-tag-bar">
@@ -561,6 +562,7 @@
     <button class="replay-btn" onclick="replayStep(1)">&rarr;</button>
     <span id="replay-counter">0 / 0</span>
     <button class="replay-btn" id="replay-crux-btn" onclick="replayToggleCrux()" style="color:#f44336;border-color:transparent;font-size:11px;">!</button>
+    <button class="replay-btn" id="replay-fake-btn" onclick="replayToggleFake()" style="color:#ff9800;border-color:transparent;font-size:11px;">~</button>
     <button class="replay-btn" onclick="replayReRecord()" style="color:#f44336;border-color:#f44336;font-size:11px;">REC</button>
     <button class="replay-btn" onclick="replayBack()">X</button>
   </div>
@@ -592,7 +594,7 @@
 </div>
 
 <script>
-const BUILD_VER = '74';
+const BUILD_VER = '75';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3295,9 +3297,10 @@ function seqUpdateStatus() {
   const n = seqMoves.length;
   const sit = seqSitStart ? ' [SIT]' : '';
   const crux = seqCruxMoveIdx >= 0 ? ` [CRUX:${seqCruxMoveIdx + 1}]` : '';
+  const fake = seqFakeCruxMoves.length > 0 ? ` [FAKE:${seqFakeCruxMoves.length}]` : '';
   document.getElementById('seq-status').textContent =
     n === 0 ? '// TAP HOLDS IN CLIMBING ORDER' :
-    `// ${n} MOVE${n > 1 ? 'S' : ''}${sit}${crux} — TAP NEXT`;
+    `// ${n} MOVE${n > 1 ? 'S' : ''}${sit}${crux}${fake} — TAP NEXT`;
 }
 
 function seqTapHold(imgX, imgY) {
@@ -3322,6 +3325,7 @@ function seqTapHold(imgX, imgY) {
 let seqPendingLimb = null;
 let seqSitStart = false;
 let seqCruxMoveIdx = -1; // which move is the crux (-1 = none)
+let seqFakeCruxMoves = []; // up to 2 fake crux move indices
 
 function seqPickLimb(limb) {
   if (seqPendingHold < 0) return;
@@ -3380,6 +3384,23 @@ function seqToggleCrux() {
   seqUpdateStatus();
 }
 
+function seqToggleFake() {
+  if (seqMoves.length === 0) { alert('Record some moves first'); return; }
+  const lastIdx = seqMoves.length - 1;
+  const pos = seqFakeCruxMoves.indexOf(lastIdx);
+  if (pos >= 0) {
+    // Remove this fake
+    seqFakeCruxMoves.splice(pos, 1);
+  } else {
+    if (seqFakeCruxMoves.length >= 2) { alert('Max 2 fakes — remove one first'); return; }
+    if (lastIdx === seqCruxMoveIdx) { alert('This move is the crux'); return; }
+    seqFakeCruxMoves.push(lastIdx);
+  }
+  document.getElementById('seq-fake-btn').style.borderColor = seqFakeCruxMoves.length > 0 ? '#ff9800' : '';
+  seqDraw();
+  seqUpdateStatus();
+}
+
 function seqUndo() {
   if (seqPendingHold >= 0) {
     seqPendingHold = -1;
@@ -3401,6 +3422,8 @@ function seqClear() {
   seqMoves = [];
   seqPendingHold = -1;
   seqPendingLimb = null;
+  seqFakeCruxMoves = [];
+  document.getElementById('seq-fake-btn').style.borderColor = '';
   document.getElementById('seq-tag-bar').classList.remove('active');
   document.getElementById('seq-limb-row').style.display = '';
   document.getElementById('seq-move-row').style.display = 'none';
@@ -3422,7 +3445,8 @@ async function seqSave() {
     createdAt: new Date().toISOString(),
     moves: seqMoves.map(m => ({ holdIdx: m.holdIdx, tag: m.tag || null })),
     sitStart: seqSitStart,
-    cruxMoveIdx: seqCruxMoveIdx >= 0 ? seqCruxMoveIdx : null
+    cruxMoveIdx: seqCruxMoveIdx >= 0 ? seqCruxMoveIdx : null,
+    fakeCruxMoves: seqFakeCruxMoves.length > 0 ? [...seqFakeCruxMoves] : null
   });
   await saveRoutes(routes);
   showSaveToast('BETA SAVED');
@@ -3727,6 +3751,7 @@ function replayDraw() {
     `// ${replayRoute.name || 'ROUTE'} ${replayRoute.grade || ''}${sitTag}${cruxTag}`;
   document.getElementById('replay-play-btn').textContent = replayPlaying ? '||' : '\u25B6';
   replayUpdateCruxBtn();
+  replayUpdateFakeBtn();
 }
 
 function replayStep(dir) {
@@ -3790,6 +3815,40 @@ function replayUpdateCruxBtn() {
   btn.style.borderColor = isCrux ? '#f44336' : 'transparent';
 }
 
+async function replayToggleFake() {
+  if (!replaySeq) return;
+  const current = replayStep_;
+  if (replaySeq.cruxMoveIdx === current) { alert('This move is the crux'); return; }
+  if (!replaySeq.fakeCruxMoves) replaySeq.fakeCruxMoves = [];
+  const pos = replaySeq.fakeCruxMoves.indexOf(current);
+  if (pos >= 0) {
+    replaySeq.fakeCruxMoves.splice(pos, 1);
+  } else {
+    if (replaySeq.fakeCruxMoves.length >= 2) { alert('Max 2 fakes — remove one first'); return; }
+    replaySeq.fakeCruxMoves.push(current);
+  }
+  if (replaySeq.fakeCruxMoves.length === 0) replaySeq.fakeCruxMoves = null;
+  // Save
+  const routes = await getRoutes();
+  const r = routes[replayRouteIdx];
+  if (r && r.sequences && r.sequences.length > 0) {
+    r.sequences[r.sequences.length - 1].fakeCruxMoves = replaySeq.fakeCruxMoves;
+    await saveRoutes(routes);
+    const n = replaySeq.fakeCruxMoves ? replaySeq.fakeCruxMoves.length : 0;
+    showSaveToast('FAKE ' + (pos >= 0 ? 'CLEARED' : 'SET') + ` (${n}/2)`);
+  }
+  replayUpdateFakeBtn();
+  replayDraw();
+}
+
+function replayUpdateFakeBtn() {
+  const btn = document.getElementById('replay-fake-btn');
+  if (!btn) return;
+  const fakes = replaySeq && replaySeq.fakeCruxMoves;
+  const isFake = fakes && fakes.includes(replayStep_);
+  btn.style.borderColor = isFake ? '#ff9800' : 'transparent';
+}
+
 function replayReRecord() {
   if (!confirm('Re-record beta?\nOld beta kept until you SAVE.')) return;
   replayPlaying = false;
@@ -3811,6 +3870,7 @@ async function startSequenceRecord(idx) {
   seqPendingHold = -1;
   seqSitStart = false;
   seqCruxMoveIdx = -1;
+  seqFakeCruxMoves = [];
   seqCanvas = document.getElementById('seq-canvas');
   seqCtx = seqCanvas.getContext('2d');
   seqImg = new Image();
