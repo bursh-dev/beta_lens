@@ -594,7 +594,7 @@
 </div>
 
 <script>
-const BUILD_VER = '78';
+const BUILD_VER = '79';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3177,14 +3177,23 @@ function seqDraw() {
     seqCtx.lineWidth = (isLast || isPending) ? 3 : 2;
     seqCtx.stroke();
 
-    // Move number inside the hold
+    // Move number outside circle (top-right)
     if (inSeq) {
-      const numFs = Math.max(16, h.r * 0.6);
+      const numFs = Math.max(12, h.r * 0.7);
       seqCtx.font = `bold ${numFs}px Courier New`;
-      seqCtx.fillStyle = `rgba(255,255,255,0.9)`;
       seqCtx.textAlign = 'center';
       seqCtx.textBaseline = 'middle';
-      seqCtx.fillText(String(moveIdx + 1), h.x, h.y);
+      const label = String(moveIdx + 1);
+      const nx = h.x + h.r + numFs * 0.4;
+      const ny = h.y - h.r - numFs * 0.4;
+      const tw = seqCtx.measureText(label).width;
+      const bgR = Math.max(tw / 2 + 2, numFs / 2 + 1);
+      seqCtx.beginPath();
+      seqCtx.arc(nx, ny, bgR, 0, Math.PI * 2);
+      seqCtx.fillStyle = 'rgba(0,0,0,0.6)';
+      seqCtx.fill();
+      seqCtx.fillStyle = 'rgba(255,255,255,0.9)';
+      seqCtx.fillText(label, nx, ny);
       seqCtx.textAlign = 'start';
       seqCtx.textBaseline = 'alphabetic';
     } else if (!inSeq && !isPending) {
@@ -3602,21 +3611,23 @@ function replayDraw() {
     ctx.lineWidth = shown ? 2.5 : 1;
     ctx.stroke();
 
-    // Move number centered on hold
+    // Move number outside circle (top-right)
     if (shown) {
-      const numFs = Math.max(12, h.r * 0.9);
+      const numFs = Math.max(12, h.r * 0.7);
       ctx.font = `bold ${numFs}px Courier New`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const label = String(moveNum + 1);
+      const nx = h.x + h.r + numFs * 0.4;
+      const ny = h.y - h.r - numFs * 0.4;
       const tw = ctx.measureText(label).width;
-      const bgR = Math.max(tw / 2 + 3, numFs / 2 + 2);
+      const bgR = Math.max(tw / 2 + 2, numFs / 2 + 1);
       ctx.beginPath();
-      ctx.arc(h.x, h.y, bgR, 0, Math.PI * 2);
+      ctx.arc(nx, ny, bgR, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fill();
       ctx.fillStyle = isTop ? '#44ff44' : isPast ? '#ff5555' : '#fff';
-      ctx.fillText(label, h.x, h.y);
+      ctx.fillText(label, nx, ny);
       ctx.textAlign = 'start';
       ctx.textBaseline = 'alphabetic';
     }
