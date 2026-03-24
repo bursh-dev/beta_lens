@@ -235,7 +235,7 @@
 </div>
 
 <a class="back-link" href="../">BetaLens</a>
-<div class="game-ver">v16</div>
+<div class="game-ver">v17</div>
 
 <script>
 const ROUTES = [
@@ -525,9 +525,9 @@ function advanceRound() {
 }
 
 const MOVE_LINE_COLOR = '#00bcd4';
+const CRUX_LABELS = ['A', 'B', 'C'];
 
 function drawMovesOnCanvas(route, highlightIdx) {
-  // Draw moves on route canvas
   const canvas = document.getElementById('route-canvas');
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
@@ -535,33 +535,34 @@ function drawMovesOnCanvas(route, highlightIdx) {
   moveOrder.forEach(function(origIdx, displayIdx) {
     const m = route.moves[origIdx];
     if (!m) return;
-    const x1 = m.x1 * w, y1 = m.y1 * h;
-    const x2 = m.x2 * w, y2 = m.y2 * h;
+    const cx = m.x2 * w, cy = m.y2 * h;
 
     let color = MOVE_LINE_COLOR;
     if (highlightIdx !== undefined) {
-      if (origIdx === route.crux) color = '#4caf50'; // correct one = green
-      else if (displayIdx === highlightIdx && origIdx !== route.crux) color = '#f44336'; // wrong pick = red
+      if (origIdx === route.crux) color = '#4caf50';
+      else if (displayIdx === highlightIdx && origIdx !== route.crux) color = '#f44336';
       else color = '#555';
     }
 
-    // Thin line between holds
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(1.5, Math.min(w, h) * 0.003);
-    ctx.setLineDash([]);
+    // Letter label at hold center
+    const fontSize = Math.max(18, Math.min(w, h) * 0.035);
+    ctx.font = 'bold ' + fontSize + 'px Courier New';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const label = CRUX_LABELS[displayIdx];
+    const tw = ctx.measureText(label).width;
+    const bgR = Math.max(tw / 2 + 4, fontSize / 2 + 3);
     ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
+    ctx.arc(cx, cy, bgR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
     ctx.stroke();
-
-    // Tiny dots at endpoints
-    const r = Math.max(3, Math.min(w, h) * 0.005);
-    [{ x: x1, y: y1 }, { x: x2, y: y2 }].forEach(function(p) {
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fill();
-    });
+    ctx.fillStyle = color;
+    ctx.fillText(label, cx, cy);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
   });
 }
 
@@ -591,7 +592,7 @@ function showCruxQuestion(gradeCorrect, sitOk) {
   for (let i = 0; i < 3; i++) {
     const btn = document.createElement('button');
     btn.className = 'crux-btn';
-    btn.textContent = 'MOVE ' + (i + 1);
+    btn.textContent = CRUX_LABELS[i];
     btn.style.borderColor = MOVE_LINE_COLOR;
     btn.style.color = MOVE_LINE_COLOR;
     btn.onclick = function() { handleCruxAnswer(i, btn, gradeCorrect, sitOk); };
@@ -618,7 +619,7 @@ function handleCruxAnswer(displayIdx, btn, gradeCorrect, sitOk) {
     // Reveal correct one
     const correctDisplayIdx = moveOrder.indexOf(route.crux);
     document.querySelectorAll('.crux-btn')[correctDisplayIdx].classList.add('reveal');
-    document.getElementById('crux-feedback').textContent = 'NOPE! MOVE ' + (correctDisplayIdx + 1) + ' WAS THE CRUX';
+    document.getElementById('crux-feedback').textContent = 'NOPE! ' + CRUX_LABELS[correctDisplayIdx] + ' WAS THE CRUX';
     document.getElementById('crux-feedback').className = 'wrong';
   }
 
