@@ -594,7 +594,7 @@
 </div>
 
 <script>
-const BUILD_VER = '77';
+const BUILD_VER = '78';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -3602,14 +3602,21 @@ function replayDraw() {
     ctx.lineWidth = shown ? 2.5 : 1;
     ctx.stroke();
 
-    // Move number inside hold
+    // Move number centered on hold
     if (shown) {
-      const numFs = Math.max(16, h.r * 0.6);
+      const numFs = Math.max(12, h.r * 0.9);
       ctx.font = `bold ${numFs}px Courier New`;
-      ctx.fillStyle = isTop ? '#44ff44' : isPast ? '#ff5555' : '#fff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(String(moveNum + 1), h.x, h.y);
+      const label = String(moveNum + 1);
+      const tw = ctx.measureText(label).width;
+      const bgR = Math.max(tw / 2 + 3, numFs / 2 + 2);
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, bgR, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fill();
+      ctx.fillStyle = isTop ? '#44ff44' : isPast ? '#ff5555' : '#fff';
+      ctx.fillText(label, h.x, h.y);
       ctx.textAlign = 'start';
       ctx.textBaseline = 'alphabetic';
     }
