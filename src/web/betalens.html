@@ -593,7 +593,7 @@
 </div>
 
 <script>
-const BUILD_VER = '83';
+const BUILD_VER = '84';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -1936,8 +1936,10 @@ function showHoldPopup(idx, screenX, screenY) {
   // Set indicator color to match hold's route color
   const rc = ROUTE_COLORS[currentColorIdx];
   const indicator = document.getElementById('popup-indicator');
-  indicator.style.borderColor = rc.hex;
   indicator.style.background = 'transparent';
+  const sz = Math.max(14, Math.min(36, h.r * 0.5));
+  indicator.style.width = sz + 'px';
+  indicator.style.height = sz + 'px';
   function updateIndicator() {
     const col = HOLD_COLORS[annoHolds[editingHoldIdx].kind].color;
     indicator.style.borderColor = col;
@@ -1992,7 +1994,11 @@ function onPopupResize(val) {
   if (editingHoldIdx < 0) return;
   val = parseInt(val);
   annoHolds[editingHoldIdx].r = val;
-  document.getElementById('popup-radius-val').textContent = val;
+  // Resize indicator circle to match (scaled to fit popup)
+  const sz = Math.max(14, Math.min(36, val * 0.5));
+  const ind = document.getElementById('popup-indicator');
+  ind.style.width = sz + 'px';
+  ind.style.height = sz + 'px';
   drawAnnotation();
 }
 
