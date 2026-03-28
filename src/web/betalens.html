@@ -588,7 +588,7 @@
 </div>
 
 <script>
-const BUILD_VER = '86';
+const BUILD_VER = '87';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -1735,7 +1735,7 @@ function getTouchCenter(t1, t2) {
 
 function onAnnoTouchStart(e) {
   e.preventDefault();
-  if (editingHoldIdx >= 0) return; // popup open, ignore canvas touches
+  if (editingHoldIdx >= 0) return;
   totalTouchMovement = 0;
   draggingHoldIdx = -1;
 
@@ -1743,6 +1743,7 @@ function onAnnoTouchStart(e) {
     isTwoFinger = true;
     pinchStartDist = getTouchDist(e.touches[0], e.touches[1]);
     pinchStartZoom = viewZoom;
+    e.preventDefault();
   } else if (e.touches.length === 1) {
     isTwoFinger = false;
     panStartX = e.touches[0].clientX;
@@ -1767,35 +1768,36 @@ function onAnnoTouchMove(e) {
   e.preventDefault();
   if (editingHoldIdx >= 0) return;
   if (e.touches.length === 2) {
-    isTwoFinger = true;
+    if (!isTwoFinger) {
+      // Transitioning 1→2 fingers: reset pinch start
+      isTwoFinger = true;
+      pinchStartDist = getTouchDist(e.touches[0], e.touches[1]);
+      pinchStartZoom = viewZoom;
+      draggingHoldIdx = -1;
+    }
     totalTouchMovement = 999;
-    draggingHoldIdx = -1;
 
-    const dist = getTouchDist(e.touches[0], e.touches[1]);
-    const center = getTouchCenter(e.touches[0], e.touches[1]);
-    const vp = document.getElementById('annotate-viewport');
-    const rect = vp.getBoundingClientRect();
-    const cx = center.x - rect.left;
-    const cy = center.y - rect.top;
-    const newZoom = Math.max(1, Math.min(10, pinchStartZoom * (dist / pinchStartDist)));
-    // Zoom toward finger center (incremental, like beta screen)
+    const d = getTouchDist(e.touches[0], e.touches[1]);
+    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const rect = document.getElementById('annotate-viewport').getBoundingClientRect();
+    const cx = mx - rect.left, cy = my - rect.top;
+    const newZoom = Math.max(1, Math.min(10, pinchStartZoom * (d / pinchStartDist)));
     viewPanX = cx - (cx - viewPanX) * (newZoom / viewZoom);
     viewPanY = cy - (cy - viewPanY) * (newZoom / viewZoom);
     viewZoom = newZoom;
     applyTransform();
-  } else if (e.touches.length === 1) {
+  } else if (e.touches.length === 1 && !isTwoFinger) {
     const dx = e.touches[0].clientX - panStartX;
     const dy = e.touches[0].clientY - panStartY;
     totalTouchMovement += Math.abs(dx) + Math.abs(dy);
 
     if (draggingHoldIdx >= 0 && totalTouchMovement > TAP_THRESHOLD) {
-      // Drag hold to new position
       const s = baseScale * viewZoom;
       annoHolds[draggingHoldIdx].x = Math.round(dragStartImgX + dx / s);
       annoHolds[draggingHoldIdx].y = Math.round(dragStartImgY + dy / s);
       drawAnnotation();
     } else if (draggingHoldIdx < 0 && viewZoom > 1.05 && totalTouchMovement > TAP_THRESHOLD) {
-      // Pan viewport
       viewPanX = panViewStartX + dx;
       viewPanY = panViewStartY + dy;
       applyTransform();
@@ -1827,6 +1829,15 @@ function onAnnoTouchEnd(e) {
   }
   draggingHoldIdx = -1;
 
+  // Reset pan start when releasing from pinch to 1 finger
+  if (e.touches.length === 1 && isTwoFinger) {
+    panStartX = e.touches[0].clientX;
+    panStartY = e.touches[0].clientY;
+    panViewStartX = viewPanX;
+    panViewStartY = viewPanY;
+    isTwoFinger = false;
+    totalTouchMovement = 999; // prevent tap
+  }
   if (e.touches.length === 0) {
     isTwoFinger = false;
     if (viewZoom < 1.05 && annoImg) {
