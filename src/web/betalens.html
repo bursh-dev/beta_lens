@@ -208,7 +208,7 @@
   #hold-popup {
     display: none; position: absolute; z-index: 20;
     background: rgba(0, 0, 0, 0.95); border: 2px solid #00ffcc;
-    padding: 16px; left: 0; right: 0; bottom: 0;
+    padding: 16px; min-width: 220px;
     font-family: 'Courier New', monospace; color: #00ffcc;
   }
   #hold-popup.show { display: block; }
@@ -594,7 +594,7 @@
 </div>
 
 <script>
-const BUILD_VER = '81';
+const BUILD_VER = '82';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -1953,7 +1953,23 @@ function showHoldPopup(idx, screenX, screenY) {
     typesDiv.appendChild(btn);
   });
 
-  // Always show at bottom of viewport — never covers the hold
+  // Position popup offset from the hold — not on top of it
+  const vp = document.getElementById('annotate-viewport');
+  const rect = vp.getBoundingClientRect();
+  const holdScreenY = screenY - rect.top;
+  const popupH = 200;
+  let py, px;
+  // If hold is in top half, show popup below; if bottom half, show above
+  if (holdScreenY < rect.height / 2) {
+    py = holdScreenY + 60;
+  } else {
+    py = holdScreenY - popupH - 40;
+  }
+  px = screenX - rect.left - 110;
+  px = Math.max(4, Math.min(rect.width - 228, px));
+  py = Math.max(4, Math.min(rect.height - popupH, py));
+  popup.style.left = px + 'px';
+  popup.style.top = py + 'px';
   popup.classList.add('show');
 
   // Snapshot for undo
