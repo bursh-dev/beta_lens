@@ -216,10 +216,6 @@
   #hold-popup .popup-header {
     display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
   }
-  #hold-popup .popup-indicator {
-    width: 20px; height: 20px; border-radius: 50%; border: 2px solid;
-    flex-shrink: 0;
-  }
   #hold-popup label { font-size: 11px; display: block; margin-bottom: 2px; }
   #hold-popup input[type=range] {
     width: 100%; accent-color: #00ffcc; margin-bottom: 8px; height: 20px;
@@ -453,12 +449,11 @@
   <div class="build-ver" id="anno-ver"></div>
   <div id="hold-popup">
     <div class="popup-header">
-      <div class="popup-indicator" id="popup-indicator"></div>
       <div class="popup-types" id="popup-types"></div>
       <button class="popup-btn-delete" onclick="popupDelete()" style="padding:4px 8px;font-size:11px;">X</button>
       <button class="popup-btn-close" onclick="popupClose()" style="padding:4px 8px;font-size:11px;">OK</button>
     </div>
-    <input type="range" id="popup-radius" min="10" max="250" value="40"
+    <input type="range" id="popup-radius" min="8" max="60" value="30"
            oninput="onPopupResize(this.value)">
   </div>
   <div id="annotate-panel">
@@ -593,7 +588,7 @@
 </div>
 
 <script>
-const BUILD_VER = '84';
+const BUILD_VER = '86';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -1934,18 +1929,6 @@ function showHoldPopup(idx, screenX, screenY) {
   slider.value = h.r;
 
   // Set indicator color to match hold's route color
-  const rc = ROUTE_COLORS[currentColorIdx];
-  const indicator = document.getElementById('popup-indicator');
-  indicator.style.background = 'transparent';
-  const sz = Math.max(14, Math.min(36, h.r * 0.5));
-  indicator.style.width = sz + 'px';
-  indicator.style.height = sz + 'px';
-  function updateIndicator() {
-    const col = HOLD_COLORS[annoHolds[editingHoldIdx].kind].color;
-    indicator.style.borderColor = col;
-  }
-  updateIndicator();
-
   // Populate type buttons
   const typesDiv = document.getElementById('popup-types');
   typesDiv.innerHTML = '';
@@ -1958,7 +1941,6 @@ function showHoldPopup(idx, screenX, screenY) {
       annoHolds[editingHoldIdx].kind = t;
       typesDiv.querySelectorAll('button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      updateIndicator();
       drawAnnotation();
     };
     typesDiv.appendChild(btn);
@@ -1994,11 +1976,6 @@ function onPopupResize(val) {
   if (editingHoldIdx < 0) return;
   val = parseInt(val);
   annoHolds[editingHoldIdx].r = val;
-  // Resize indicator circle to match (scaled to fit popup)
-  const sz = Math.max(14, Math.min(36, val * 0.5));
-  const ind = document.getElementById('popup-indicator');
-  ind.style.width = sz + 'px';
-  ind.style.height = sz + 'px';
   drawAnnotation();
 }
 
