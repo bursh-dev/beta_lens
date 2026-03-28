@@ -207,8 +207,8 @@
   /* Hold edit popup */
   #hold-popup {
     display: none; position: absolute; z-index: 20;
-    background: rgba(0, 0, 0, 0.92); border: 2px solid #00ffcc;
-    padding: 16px; min-width: 220px;
+    background: rgba(0, 0, 0, 0.95); border: 2px solid #00ffcc;
+    padding: 16px; left: 0; right: 0; bottom: 0;
     font-family: 'Courier New', monospace; color: #00ffcc;
   }
   #hold-popup.show { display: block; }
@@ -594,7 +594,7 @@
 </div>
 
 <script>
-const BUILD_VER = '79';
+const BUILD_VER = '81';
 
 // ===== IndexedDB Image Store =====
 let _imgDB = null;
@@ -938,7 +938,7 @@ function renderThumbCanvas(route, size, callback) {
       ctx.beginPath();
       ctx.arc(hx, hy, hr, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(${cr},${cg},${cb},0.8)`;
-      ctx.lineWidth = Math.max(1, hr * 0.1);
+      ctx.lineWidth = Math.max(2, hr * 0.15);
       ctx.stroke();
     }
     callback(c.toDataURL('image/jpeg', 0.8));
@@ -1019,7 +1019,7 @@ function renderFullImage(route, callback) {
       ctx.beginPath();
       ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
       ctx.strokeStyle = `rgb(${cr},${cg},${cb})`;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 3;
       ctx.stroke();
     }
     // Add route name + grade label at top
@@ -1223,7 +1223,7 @@ function renderAnnotatedImage(route) {
         ctx.beginPath();
         ctx.arc(hx, hy, hr, 0, Math.PI * 2);
         ctx.strokeStyle = `rgb(${cr},${cg},${cb})`;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         ctx.stroke();
       }
       resolve(c.toDataURL('image/jpeg', 0.85));
@@ -1749,11 +1749,6 @@ function onAnnoTouchStart(e) {
     isTwoFinger = true;
     pinchStartDist = getTouchDist(e.touches[0], e.touches[1]);
     pinchStartZoom = viewZoom;
-    pinchStartPanX = viewPanX;
-    pinchStartPanY = viewPanY;
-    const center = getTouchCenter(e.touches[0], e.touches[1]);
-    panStartX = center.x;
-    panStartY = center.y;
   } else if (e.touches.length === 1) {
     isTwoFinger = false;
     panStartX = e.touches[0].clientX;
@@ -1783,18 +1778,15 @@ function onAnnoTouchMove(e) {
     draggingHoldIdx = -1;
 
     const dist = getTouchDist(e.touches[0], e.touches[1]);
-    const newZoom = Math.max(1, Math.min(10, pinchStartZoom * (dist / pinchStartDist)));
-
     const center = getTouchCenter(e.touches[0], e.touches[1]);
     const vp = document.getElementById('annotate-viewport');
     const rect = vp.getBoundingClientRect();
-    // Zoom toward finger center
     const cx = center.x - rect.left;
     const cy = center.y - rect.top;
-    const ratio = newZoom / pinchStartZoom;
-    viewPanX = cx - (cx - pinchStartPanX) * ratio + (center.x - panStartX);
-    viewPanY = cy - (cy - pinchStartPanY) * ratio + (center.y - panStartY);
-
+    const newZoom = Math.max(1, Math.min(10, pinchStartZoom * (dist / pinchStartDist)));
+    // Zoom toward finger center (incremental, like beta screen)
+    viewPanX = cx - (cx - viewPanX) * (newZoom / viewZoom);
+    viewPanY = cy - (cy - viewPanY) * (newZoom / viewZoom);
     viewZoom = newZoom;
     applyTransform();
   } else if (e.touches.length === 1) {
@@ -1896,7 +1888,7 @@ function drawAnnotation() {
     annoCtx.beginPath();
     annoCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
     annoCtx.strokeStyle = `rgb(${r},${g},${b})`;
-    annoCtx.lineWidth = 2;
+    annoCtx.lineWidth = 3;
     annoCtx.stroke();
 
     // Type label below
@@ -1961,15 +1953,7 @@ function showHoldPopup(idx, screenX, screenY) {
     typesDiv.appendChild(btn);
   });
 
-  // Position popup near tap but keep in viewport
-  const vp = document.getElementById('annotate-viewport');
-  const rect = vp.getBoundingClientRect();
-  let px = screenX - rect.left - 110;
-  let py = screenY - rect.top - 160;
-  px = Math.max(4, Math.min(rect.width - 228, px));
-  py = Math.max(4, Math.min(rect.height - 180, py));
-  popup.style.left = px + 'px';
-  popup.style.top = py + 'px';
+  // Always show at bottom of viewport — never covers the hold
   popup.classList.add('show');
 
   // Snapshot for undo
@@ -2688,8 +2672,8 @@ function drawLiveOverlay(tracking, holds, matchCount) {
     // Circle outline only
     liveCtx.beginPath();
     liveCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    liveCtx.strokeStyle = `rgba(${cr},${cg},${cb},0.8)`;
-    liveCtx.lineWidth = 2;
+    liveCtx.strokeStyle = `rgba(${cr},${cg},${cb},0.9)`;
+    liveCtx.lineWidth = 3;
     liveCtx.stroke();
 
     // Type label below
@@ -3174,7 +3158,7 @@ function seqDraw() {
     seqCtx.beginPath();
     seqCtx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
     seqCtx.strokeStyle = `rgba(${cr},${cg},${cb},${inSeq ? 0.9 : 0.5})`;
-    seqCtx.lineWidth = (isLast || isPending) ? 3 : 2;
+    seqCtx.lineWidth = (isLast || isPending) ? 4 : 3;
     seqCtx.stroke();
 
     // Move number outside circle (top-right)
@@ -3608,7 +3592,7 @@ function replayDraw() {
     ctx.beginPath();
     ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
     ctx.strokeStyle = `rgba(${hr},${hg},${hb},${shown ? 0.9 : 0.15})`;
-    ctx.lineWidth = shown ? 2.5 : 1;
+    ctx.lineWidth = shown ? 3.5 : 1.5;
     ctx.stroke();
 
     // Move number outside circle (top-right)
